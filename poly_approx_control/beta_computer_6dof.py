@@ -1,21 +1,16 @@
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Float64, Float64MultiArray,MultiArrayDimension,Float32MultiArray
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import TransformStamped
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import Float64MultiArray,Float32MultiArray
-
-from geometry_msgs.msg import Point, Twist,TwistStamped
-from visualization_msgs.msg import Marker
-from geometry_msgs.msg import TransformStamped
-
 
 M = 3 # degree of polynomial
 
-P = 40
+P = 10
 
 def read_txt_file(file_path):
     with open(file_path, 'r') as file:
@@ -76,8 +71,8 @@ def trans_to_vecs(trans: TransformStamped):
 
 def compute_r_from_transes(tr :TransformStamped,tl :TransformStamped):
     """Compute the r vector from the transforms of the left and right end effectors"""
-    r_left, pos_left = trans_to_vecs(tl)
-    r_right, pos_right = trans_to_vecs(tr)
+    r_left, pos_left = trans_to_matrix(tl)
+    r_right, pos_right = trans_to_matrix(tr)
 
     r = np.array([pos_right[0],pos_right[1],pos_right[2],
                   r_right[0],r_right[1],r_right[2],
@@ -148,128 +143,61 @@ def compute_dWi(r):
     
 
 
-def compute_A(beta,r,n=51):
-
+def compute_beta(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,r):
+    N = len(r_poses)
+    n = len(points_between_tcpes[0])
     R = 12
-    dwi = compute_dWi(r)
-    j=0
 
-    A = np.vstack( 
-        np.hstack(
-            [dwi[:,3*i : 3*(i+1)] @ beta[3*i + R*j:3*(i+1) + R*j]  for i in range(R)]
-            ) for j in range(3*n))
-    
-    print(f"A shape: {A.shape}")
+    print(f"Number of curves: {N}, Number of points per curve: {n}")
 
-    return np.asarray(A)
+    print(f"W shape: {compute_W(r, n).shape}")
 
-    
+    sv = np.array(points_between_tcpes).flatten()
 
+    Wv = np.vstack([compute_W(compute_r(r_poses[i], l_poses[i], r_Rs[i], l_Rs[i]), n) for i in range(N)])
 
-def compute_cmd(beta,s,s_star,r):
+    invWv = np.linalg.pinv(Wv)
+    beta = (invWv @ sv).transpose()
 
-    A = compute_A(beta,r,n=s.shape[0]/3)
+    print("f beta shape {beta.shape}")
 
-    ds = s_star - s
+    return np.asarray(beta )
 
 
-    invA = np.linalg.pinv(A)
-
-    dr = invA @ ds
-
-    dr_pos, dl_pos, dvr, dvl = decompose_r(dr.transpose())
-
-
-
-
-class Ainit_computer(Node):
+class BetaComputer(Node):
     def __init__(self):
-        super().__init__('a_init_computer')
+        super().__init__('beta_computer')
+        self.beta_pub = self.create_publisher(Float32MultiArray, '/beta', 10)
 
 
-
-
-        self.tcp_left = None
-        self.tcp_right = None
-
-
-        self.A = None
-
-        self.tcp_left_sub = self.create_subscription(
-            TransformStamped,
-            '/tcp_left',
-            self.tcp_left_callback,
-            10
-        )
-        self.tcp_right_sub = self.create_subscription(
-            TransformStamped,
-            '/tcp_right',
-            self.tcp_right_callback,
-            10
-        )
-
-        self.beta_sub = self.create_subscription(
-            Float32MultiArray,  
-            '/beta',
-            self.beta_callback,
-            10
-        )
-
-        self.A_pub = self.create_publisher(Float64MultiArray, '/A_init', 10)
-
-        self.beta = None
-
-        self.create_timer(0.1, self.timer_cb)
         
 
+        r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes =read_txt_file("curve_points_datas.txt")
 
-    def tcp_right_callback(self, msg):
-        self.get_logger().info(
-            f"tcp_right: position=({msg.transform.translation.x}, {msg.transform.translation.y}, {msg.transform.translation.z}), "
-            f"orientation=({msg.transform.rotation.x}, {msg.transform.rotation.y}, {msg.transform.rotation.z}, {msg.transform.rotation.w})"
-        )
-        self.tcp_right = msg
+        self.get_logger().info(f"Number of curves: {len(r_poses)}, Number of points per curve: {len(points_between_tcpes[0])}")
 
-    def tcp_left_callback(self, msg):
-        self.get_logger().info(
-            f"tcp_left: position=({msg.transform.translation.x}, {msg.transform.translation.y}, {msg.transform.translation.z}), "
-            f"orientation=({msg.transform.rotation.x}, {msg.transform.rotation.y}, {msg.transform.rotation.z}, {msg.transform.rotation.w})"
-        )
-        self.tcp_left = msg
+        self.get_logger().info(f"begining to compute beta")
+
+        self.beta = compute_beta(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,compute_r(r_poses[0], l_poses[0], r_Rs[0], l_Rs[0]))
+
+        self.get_logger().info(f"beta computed, shape: {self.beta.shape} , starting publishing")
+        self.create_timer(0.1, self.publish_beta)  
 
 
-    def timer_cb(self):
-        if self.tcp_left is not None and self.tcp_right is not None and self.beta is not None:
+    def publish_beta(self):
+        beta_msg = Float32MultiArray()
+        beta_list = self.beta.ravel().tolist()
+        beta_msg.data = beta_list
 
-            self.get_logger().info("Computing A matrix...")
-            r = compute_r_from_transes(self.tcp_right, self.tcp_left)
-            A = compute_A(self.beta, r, n=51)
-
-            self.get_logger().info(f"A matrix computed, shape: {A.shape}")
-            A_msg = Float64MultiArray()
-
-            A_list = A.flatten().tolist()
-
-            self.get_logger().info(f"Publishing A matrix with {len(A_msg.data)} elements. A0 = {A_list[0]}")
-
-            A_msg.data = A_list
-
-
-            self.A_pub.publish(A_msg)
-
-
-    def beta_callback(self, msg):
-        self.get_logger().info(f"Received beta with {len(msg.data)} elements.")
-        self.beta = beta = np.array(msg.data).reshape(-1, 1)
-
-
-
+        self.beta_pub.publish(beta_msg)
+        self.get_logger().info(f"Published beta with {len(beta_msg.data)} elements.")
+        
 
     
 
 def main(args=None):
     rclpy.init(args=args)
-    node = Ainit_computer()
+    node = BetaComputer()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

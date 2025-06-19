@@ -4,14 +4,6 @@ from geometry_msgs.msg import TransformStamped
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import Float64MultiArray,Float32MultiArray
-
-from geometry_msgs.msg import Point, Twist,TwistStamped
-from visualization_msgs.msg import Marker
-from geometry_msgs.msg import TransformStamped
-
 
 M = 3 # degree of polynomial
 
@@ -76,8 +68,8 @@ def trans_to_vecs(trans: TransformStamped):
 
 def compute_r_from_transes(tr :TransformStamped,tl :TransformStamped):
     """Compute the r vector from the transforms of the left and right end effectors"""
-    r_left, pos_left = trans_to_vecs(tl)
-    r_right, pos_right = trans_to_vecs(tr)
+    r_left, pos_left = trans_to_matrix(tl)
+    r_right, pos_right = trans_to_matrix(tr)
 
     r = np.array([pos_right[0],pos_right[1],pos_right[2],
                   r_right[0],r_right[1],r_right[2],
@@ -148,11 +140,45 @@ def compute_dWi(r):
     
 
 
-def compute_A(beta,r,n=51):
-
+def compute_A(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,r):
+    N = len(r_poses)
+    n = len(points_between_tcpes[0])
     R = 12
+
+    print(f"Number of curves: {N}, Number of points per curve: {n}")
+
+    print(f"W shape: {compute_W(r, n).shape}")
+
+    sv = np.array(points_between_tcpes).flatten()
+
+    Wv = np.vstack([compute_W(compute_r(r_poses[i], l_poses[i], r_Rs[i], l_Rs[i]), n) for i in range(N)])
+
+    invWv = np.linalg.pinv(Wv)
+    beta = (invWv @ sv).transpose()
+
+    print(f"beta shape: {beta.shape}")
+    print(f"Wv shape: {Wv.shape}")
+    print(f"sv shape: {sv.shape}")
+
+    print(f"r : {r}")
+    print(f"r shape: {r.shape}")
+
+    print(f"dwi  : {compute_dWi(r).shape}")
+
     dwi = compute_dWi(r)
+
+    r_test = [2,10,20]
+
     j=0
+
+    a= np.hstack(
+            [dwi[:,3*i : 3*(i+1)] @ beta[3*i + M*j:3*(i+1) + R*j]  for i in range(R)]
+            )
+    
+    print(f"a shape: {a.shape}")
+    
+
+
 
     A = np.vstack( 
         np.hstack(
@@ -161,122 +187,70 @@ def compute_A(beta,r,n=51):
     
     print(f"A shape: {A.shape}")
 
-    return np.asarray(A)
+    return A
 
+def plot_cable(s,color='b'):
+    """
+    Plots a 3D cable given its points.
+    
+    Parameters:
+        s (numpy.ndarray): A (51, 3) array representing the cable points (x, y, z).
+    """
+    if s.shape != (51, 3):
+        s = s.reshape(-1, 3)  # Ensure s is reshaped to (51, 3)
+    
+
+    
+    ax.plot(s[:, 0], s[:, 1], s[:, 2], marker='o', label='Cable', color=color)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.set_title('3D Cable Plot')
+    ax.legend()
     
 
 
-def compute_cmd(beta,s,s_star,r):
-
-    A = compute_A(beta,r,n=s.shape[0]/3)
-
-    ds = s_star - s
-
-
-    invA = np.linalg.pinv(A)
-
-    dr = invA @ ds
-
-    dr_pos, dl_pos, dvr, dvl = decompose_r(dr.transpose())
 
 
 
 
-class Ainit_computer(Node):
-    def __init__(self):
-        super().__init__('a_init_computer')
+r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes =read_txt_file("curve_points_datas.txt")
+print(f"points_between_tcpes shape: {np.array(points_between_tcpes).shape}")
+
+A = compute_A(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,compute_r(r_poses[0], l_poses[0], r_Rs[0], l_Rs[0]))
+
+print(f"A : {A}")
+
+s = np.array(points_between_tcpes[0]).flatten()
+
+s_star = np.array(points_between_tcpes[7]).flatten()
+
+ds = s_star - s
 
 
+invA = np.linalg.pinv(A)
+
+dr = - invA @ ds
+
+dr_pos, dl_pos, dvr, dvl = decompose_r(dr.transpose())
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+lp = np.array(l_poses[0])
+rp = np.array(r_poses[0])
 
 
-        self.tcp_left = None
-        self.tcp_right = None
+# Plot position vectors
+ax.quiver(rp[0],rp[1],rp[2], dr_pos[0], dr_pos[1], dr_pos[2], color='red', label='dr_pos')
+ax.quiver(lp[0],lp[1],lp[2], dl_pos[0], dl_pos[1], dl_pos[2], color='red', linestyle='dashed', label='dl_pos')
 
+# Plot rotation vectors
+ax.quiver(rp[0], rp[1], rp[2], dvr[0], dvr[1], dvr[2], color='blue', label='dvr')
+ax.quiver(lp[0], lp[1], lp[2], dvl[0], dvl[1], dvl[2], color='blue', linestyle='dashed', label='dvl')
+ax.legend()
+# Example usage
+plot_cable(s)
+plot_cable(s_star, color='green')
 
-        self.A = None
-
-        self.tcp_left_sub = self.create_subscription(
-            TransformStamped,
-            '/tcp_left',
-            self.tcp_left_callback,
-            10
-        )
-        self.tcp_right_sub = self.create_subscription(
-            TransformStamped,
-            '/tcp_right',
-            self.tcp_right_callback,
-            10
-        )
-
-        self.beta_sub = self.create_subscription(
-            Float32MultiArray,  
-            '/beta',
-            self.beta_callback,
-            10
-        )
-
-        self.A_pub = self.create_publisher(Float64MultiArray, '/A_init', 10)
-
-        self.beta = None
-
-        self.create_timer(0.1, self.timer_cb)
-        
-
-
-    def tcp_right_callback(self, msg):
-        self.get_logger().info(
-            f"tcp_right: position=({msg.transform.translation.x}, {msg.transform.translation.y}, {msg.transform.translation.z}), "
-            f"orientation=({msg.transform.rotation.x}, {msg.transform.rotation.y}, {msg.transform.rotation.z}, {msg.transform.rotation.w})"
-        )
-        self.tcp_right = msg
-
-    def tcp_left_callback(self, msg):
-        self.get_logger().info(
-            f"tcp_left: position=({msg.transform.translation.x}, {msg.transform.translation.y}, {msg.transform.translation.z}), "
-            f"orientation=({msg.transform.rotation.x}, {msg.transform.rotation.y}, {msg.transform.rotation.z}, {msg.transform.rotation.w})"
-        )
-        self.tcp_left = msg
-
-
-    def timer_cb(self):
-        if self.tcp_left is not None and self.tcp_right is not None and self.beta is not None:
-
-            self.get_logger().info("Computing A matrix...")
-            r = compute_r_from_transes(self.tcp_right, self.tcp_left)
-            A = compute_A(self.beta, r, n=51)
-
-            self.get_logger().info(f"A matrix computed, shape: {A.shape}")
-            A_msg = Float64MultiArray()
-
-            A_list = A.flatten().tolist()
-
-            self.get_logger().info(f"Publishing A matrix with {len(A_msg.data)} elements. A0 = {A_list[0]}")
-
-            A_msg.data = A_list
-
-
-            self.A_pub.publish(A_msg)
-
-
-    def beta_callback(self, msg):
-        self.get_logger().info(f"Received beta with {len(msg.data)} elements.")
-        self.beta = beta = np.array(msg.data).reshape(-1, 1)
-
-
-
-
-    
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = Ainit_computer()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
-
-if __name__ == '__main__':
-    main()
+plt.show()

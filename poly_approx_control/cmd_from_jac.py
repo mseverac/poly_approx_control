@@ -1,11 +1,12 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray,Header
+from std_msgs.msg import Float32MultiArray,Header,Float64MultiArray
 from geometry_msgs.msg import Point, Twist,TwistStamped
 import numpy as np
 
 from ur_msgs.msg import PointArray  
 from visualization_msgs.msg import Marker
+from scipy.spatial.transform import Rotation as R
 
 
 
@@ -17,13 +18,13 @@ class Ros2ControllerNode(Node):
 
 
         #gains pour dlo_nn
-        self.k = 2
+        self.k = 1000
         self.ka = 0.01
         self.vmax = 0.005
 
         self.max_time_diff = 0.1  # seconds
         # Subscribers
-        self.create_subscription(Float32MultiArray, '/jacobian', self.jacobian_callback, 10)
+        self.create_subscription(Float64MultiArray, '/A_init', self.jacobian_callback, 10)
         self.create_subscription(Float32MultiArray, '/curve_target_6dof', self.curve_target_callback, 10)
         self.create_subscription(Float32MultiArray, "/points3d", self.points3d_callback, 10)
 
@@ -38,10 +39,10 @@ class Ros2ControllerNode(Node):
         )
 
         self.cmd_vel_left_pubs = self.create_publisher(
-            TwistStamped, "/left/vis_vel_cmd_6dof_stamped", 1
+            TwistStamped, "/left/cart_vel_cmd_6dof_stamped", 1
         )
         self.cmd_vel_right_pubs = self.create_publisher(
-            TwistStamped, "/right/vis_vel_cmd_6dof_stamped", 1
+            TwistStamped, "/right/cart_vel_cmd_6dof_stamped", 1
         )
 
         # Data storage
@@ -51,6 +52,7 @@ class Ros2ControllerNode(Node):
 
         #self.publisher_points_rviz_target = self.create_publisher(Marker, "target_marker", 1)
         self.publisher_points_rviz = self.create_publisher(Marker, "curve_marker", 1)
+        self.publisher_points_rviz_target = self.create_publisher(Marker, "target_marker", 1)
 
         self.last_points3d_time = self.get_clock().now()
         self.timer = self.create_timer(0.1, self.check_timeout)
@@ -107,27 +109,32 @@ class Ros2ControllerNode(Node):
         if self.jacobian_data is None:
             self.get_logger().warn("Jacobian data not received yet.")
 
-        if self.curve_target_data is None:
-            self.get_logger().warn("Curve target data not received yet.")
-        else:
-            # Command computation
-            #self.publish_marker_points_rviz(self.curve_target_data.reshape(-1, 3), self.publisher_points_rviz_target)
-            self.publish_marker_points_rviz(self.points3d_data.reshape(-1, 3), self.publisher_points_rviz, color=(1.0, 0.0, 0.0))
-            s = self.points3d_data.copy()
-            sstar = self.curve_target_data.copy()
-            ds = sstar - s
-            #self.get_logger().info(f"ds shape: {ds.shape}")
+        else : 
 
-            invJ = np.linalg.pinv(self.jacobian_data)
-            #self.get_logger().info(f"invJ shape: {invJ.shape}")
+            if self.curve_target_data is None:
+                self.get_logger().warn("Curve target data not received yet.")
+            else:
+                # Command computation
+                self.publish_marker_points_rviz(self.curve_target_data.reshape(-1, 3), self.publisher_points_rviz_target,color=(0.0, 1.0, 0.0))
+                self.publish_marker_points_rviz(self.points3d_data.reshape(-1, 3), self.publisher_points_rviz, color=(1.0, 0.0, 0.0))
+                s = self.points3d_data.copy()
+                sstar = self.curve_target_data
+                ds = sstar - s
 
-            dr = invJ @ ds
-            #self.get_logger().info(f"dr shape: {dr.shape}")
-            #self.get_logger().info(f"dr: {dr}")
+                """self.get_logger().info(f"s: {s}")
+                self.get_logger().info(f"sstar: {sstar}")"""
+                self.get_logger().info(f"ds norm: {np.linalg.norm(ds)}")
 
-            # Publish the command velocities
+                invJ = np.linalg.pinv(self.jacobian_data)
+                #self.get_logger().info(f"invJ shape: {invJ.shape}")
 
-            self.pub_cmd_nn(dr)
+                dr = invJ @ ds
+                #self.get_logger().info(f"dr shape: {dr.shape}")
+                #self.get_logger().info(f"dr: {dr}")
+
+                # Publish the command velocities
+
+                self.pub_cmd_nn(dr)
 
 
             """dr = -self.k * dr.astype(float).flatten()
@@ -168,32 +175,74 @@ class Ros2ControllerNode(Node):
 
         self.get_logger().info(f"------ Command velocities ---")
 
-        self.get_logger().info(f"norm left linear dr : {np.linalg.norm([dr[0], dr[8], dr[4]])}")
-        self.get_logger().info(f"norm right linear dr : {np.linalg.norm([dr[2], dr[10], dr[6]])}")
-        self.get_logger().info(f"norm left angular dr : {np.linalg.norm([dr[1], dr[9], dr[5]])}")
-        self.get_logger().info(f"norm right angular dr : {np.linalg.norm([dr[3], dr[11], dr[7]])}")
+        # dr = [linear_r(0:3), angular_r(3:6), linear_l(6:9), angular_l(9:12)]
+        self.get_logger().info(f"norm right linear dr : {np.linalg.norm(dr[0:3])}")
+        self.get_logger().info(f"norm right angular dr : {np.linalg.norm(dr[3:6])}")
+        self.get_logger().info(f"norm left linear dr : {np.linalg.norm(dr[6:9])}")
+        self.get_logger().info(f"norm left angular dr : {np.linalg.norm(dr[9:12])}")
 
         self.get_logger().info(f"***************")
 
+        dr = self.vmax * np.tanh(self.k * dr.astype(float).flatten())
 
-        dr = self.vmax * np.tanh(-self.k * dr.astype(float).flatten())
+        def decompose_r(r):
+            """Decompose the r vector into positions and rotation matrices for left and right end effectors"""
+            
+            # Extraire les positions
+            r_pos = np.array(r[0:3], dtype=np.float64)
+            vr = np.array(r[3:6], dtype=np.float64)
+            l_pos = np.array(r[6:9], dtype=np.float64)
+            vl = np.array(r[9:12], dtype=np.float64)
 
-        cmd_left = Twist()
-        cmd_left.linear.x = -dr[0]
-        cmd_left.linear.y = dr[8]
-        cmd_left.linear.z = -dr[4]
+            return r_pos, l_pos, vr, vl
 
-        cmd_left.angular.x = -dr[1] * self.ka
-        cmd_left.angular.y = dr[9] * self.ka
-        cmd_left.angular.z = -dr[5] * self.ka
 
+
+        # Changement de base: x=0, y=2, z=1
+        # Droite
         cmd_right = Twist()
-        cmd_right.linear.x = -dr[2]
-        cmd_right.linear.y = dr[10]
-        cmd_right.linear.z = -dr[6]
-        cmd_right.angular.x = -dr[3] * self.ka
-        cmd_right.angular.y = dr[11] * self.ka
-        cmd_right.angular.z = -dr[7] * self.ka
+        cmd_right.linear.x = dr[0]
+        cmd_right.linear.y = -dr[2]
+        cmd_right.linear.z = dr[1]
+        cmd_right.angular.x = dr[3] * self.ka
+        cmd_right.angular.y = -dr[5] * self.ka
+        cmd_right.angular.z = dr[4] * self.ka
+
+        viz_cmd_right = Twist()
+        viz_cmd_right.linear.x = dr[0]
+        viz_cmd_right.linear.y = dr[2]
+        viz_cmd_right.linear.z = dr[1]
+        viz_cmd_right.angular.x = dr[3] * self.ka
+        viz_cmd_right.angular.y = dr[5] * self.ka
+        viz_cmd_right.angular.z = dr[4] * self.ka
+        self.cmd_vel_right_pubs.publish(TwistStamped(
+            header=Header(stamp=self.get_clock().now().to_msg(),
+                   frame_id="fixed_right_gripper_bf"), twist=viz_cmd_right))
+
+        viz_cmd_left = Twist()
+        viz_cmd_left.linear.x = dr[6]
+        viz_cmd_left.linear.y = dr[8]
+        viz_cmd_left.linear.z = dr[7]
+        viz_cmd_left.angular.x = dr[9] * self.ka
+        viz_cmd_left.angular.y = dr[11] * self.ka
+        viz_cmd_left.angular.z = dr[10] * self.ka
+        self.cmd_vel_left_pubs.publish(TwistStamped(
+            header=Header(stamp=self.get_clock().now().to_msg(),
+                   frame_id="fixed_left_gripper_bf"), twist=viz_cmd_left))
+        
+
+
+
+
+        # Gauche
+        cmd_left = Twist()
+        cmd_left.linear.x = dr[6]
+        cmd_left.linear.y = -dr[8]
+        cmd_left.linear.z = dr[7]
+        cmd_left.angular.x = dr[9] * self.ka
+        cmd_left.angular.y = -dr[11] * self.ka
+        cmd_left.angular.z = dr[10] * self.ka
+
         #self.get_logger().info(f"Left command: {cmd_left}")
         self.cmd_vel_left_pub.publish(cmd_left)
         #self.cmd_vel_left_pubs.publish(TwistStamped(header=Header(stamp=self.get_clock().now().to_msg(), frame_id="fixed_left_gripper"), twist=cmd_left))
@@ -207,17 +256,18 @@ class Ros2ControllerNode(Node):
         self.get_logger().info(f"norm right angular cmd : {np.linalg.norm([cmd_right.angular.x, cmd_right.angular.y, cmd_right.angular.z])}")
         self.get_logger().info(f"***************")
 
+
        
 
     def jacobian_callback(self, msg):
         self.jacobian_data = np.array(msg.data).reshape(-1, 12)
-        self.get_logger().info(f"Received Jacobian data: {self.jacobian_data}")
+        #self.get_logger().info(f"Received Jacobian data: {self.jacobian_data}")
 
     def curve_target_callback(self, msg):
-        self.get_logger().info(f"Received Curve Target message: {msg}")
+        #self.get_logger().info(f"Received Curve Target message: {msg}")
         self.curve_target_data = np.array(msg.data).reshape(-1, 1)
 
-        self.get_logger().info(f"Processed Curve Target data (shape {self.curve_target_data.shape}): {self.curve_target_data}")
+        self.get_logger().info(f"Processed Curve Target data (shape {self.curve_target_data.shape})")
    
 
 def main(args=None):

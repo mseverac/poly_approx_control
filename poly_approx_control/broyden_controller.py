@@ -99,6 +99,23 @@ class PointController(Node):
         self.gamma = 0.01
 
 
+                
+                
+        self.tcp_left_sub = self.create_subscription(
+            TransformStamped,
+            '/tcp_left',
+            self.tcp_left_callback,
+            10
+        )
+        self.tcp_right_sub = self.create_subscription(
+            TransformStamped,
+            '/tcp_right',
+            self.tcp_right_callback,
+            10
+        )
+        
+
+
     def tcp_right_callback(self, msg):
         self.get_logger().info(
             f"tcp_right: position=({msg.transform.translation.x}, {msg.transform.translation.y}, {msg.transform.translation.z}), "

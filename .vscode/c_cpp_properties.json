@@ -1,0 +1,47 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/lar95/ros/visual_servoing/install/ur_calibration/include/**",
+        "/home/lar95/ros/visual_servoing/install/ur_robot_driver/include/**",
+        "/home/lar95/ros/visual_servoing/install/ur_controllers/include/**",
+        "/home/lar95/ros/visual_servoing/install/ur_msgs/include/**",
+        "/home/lar95/ros/visual_servoing/install/ur_dashboard_msgs/include/**",
+        "/home/lar95/ros/visual_servoing/install/simod_vision_msgs/include/**",
+        "/home/lar95/ros/visual_servoing/install/gazebo_ros2_control/include/**",
+        "/home/lar95/ros/visual_servoing/install/depthai_ros_driver/include/**",
+        "/home/lar95/ros/visual_servoing/install/depthai_filters/include/**",
+        "/home/lar95/ros/visual_servoing/install/depthai_bridge/include/**",
+        "/home/lar95/ros/visual_servoing/install/depthai_ros_msgs/include/**",
+        "/home/lar95/ros/tracking_ws/install/ur_calibration/include/**",
+        "/home/lar95/ros/tracking_ws/install/ur_robot_driver/include/**",
+        "/home/lar95/ros/tracking_ws/install/ur_controllers/include/**",
+        "/home/lar95/ros/tracking_ws/install/ur_dashboard_msgs/include/**",
+        "/home/lar95/ros/tracking_ws/install/simod_vision_msgs/include/**",
+        "/home/lar95/ros/tracking_ws/install/message/include/**",
+        "/opt/ros/humble/include/**",
+        "/home/lar95/ros/visual_servoing/src/Universal_Robots_ROS2_Driver/ur_calibration/include/**",
+        "/home/lar95/ros/visual_servoing/src/Universal_Robots_ROS2_Driver/ur_controllers/include/**",
+        "/home/lar95/ros/visual_servoing/src/Universal_Robots_ROS2_Driver/ur_robot_driver/include/**",
+        "/home/lar95/ros/visual_servoing/src/control/include/**",
+        "/home/lar95/ros/visual_servoing/src/cosserat_nordbo/include/**",
+        "/home/lar95/ros/visual_servoing/src/depthai-ros/depthai_bridge/include/**",
+        "/home/lar95/ros/visual_servoing/src/depthai-ros/depthai_filters/include/**",
+        "/home/lar95/ros/visual_servoing/src/depthai-ros/depthai_ros_driver/include/**",
+        "/home/lar95/ros/visual_servoing/src/gazebo_ros2_control/gazebo_ros2_control/include/**",
+        "/home/lar95/ros/visual_servoing/src/visualservoing_launch/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

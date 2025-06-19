@@ -22,6 +22,9 @@ setup(
         'console_scripts': [
             "curve_writer = poly_approx_control.curve_writer:main",
             "data_aquisition = poly_approx_control.data_aquisition:main",
+            "beta_computer = poly_approx_control.beta_computer_6dof:main",
+            "A_init_computer = poly_approx_control.A_init_computer:main",
+            "cmd_from_jac = poly_approx_control.cmd_from_jac:main",
         ],
     },
 )
