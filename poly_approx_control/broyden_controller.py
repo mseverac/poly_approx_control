@@ -40,13 +40,16 @@ def compute_r(tr :TransformStamped,tl :TransformStamped):
 def broyden_update(A,ds,dr,gamma=0.01):
     """Update the Jacobian matrix A using Broyden's method"""
 
+    dr = np.asarray(dr).reshape(-1,1)
+    ds = np.asarray(ds).reshape(-1,1)
+
     print(f" A shape: {A.shape}, ds shape: {ds.shape}, dr shape: {dr.shape}")
-    print(f"A @ dr shape: {(A @ dr).shape}, ds shape: {ds.shape}")
+    print(f"A @ dr shape: {(np.asarray(A @ dr).reshape(-1,1)).shape}, ds shape: {ds.shape}")
     print(f"dr.T @ dr shape: {(dr.T @ dr).shape}")
-    print(f"ds - A @ dr shape: {(ds - A @ dr).shape}")
+    print(f"ds - A @ dr shape: {(ds - np.asarray(A @ dr).reshape(-1,1)).shape}")
     print(f"dr.T shape: {dr.T.shape}")
     print(f"  ((ds - A @ dr) / dr.T @ dr ) shape: {((ds - A @ dr) / (dr.T @ dr)).shape}")
-    A = A + gamma * ((ds - A @ dr) / dr.T @ dr ) @ dr.T
+    A = A + gamma * ((ds - np.asarray(A @ dr).reshape(-1,1)) / dr.T @ dr ) @ dr.T
 
 
     return A
@@ -171,10 +174,12 @@ class PointController(Node):
 
 
             if np.linalg.norm(ds) > 0.01 and np.linalg.norm(dr) > 0.01:
-                self.get_logger().info(f"dscand dr initialized, ds: {ds}, dr: {dr}")
+                self.get_logger().info(f"ds and dr initialized")
 
                 self.ds = ds
                 self.dr = dr
+
+            
         
 
     def curve_target_callback(self, msg):
