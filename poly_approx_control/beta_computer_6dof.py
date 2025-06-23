@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 M = 3 # degree of polynomial
 
-P = 80
+P = 10
 
 def read_txt_file(file_path):
     with open(file_path, 'r') as file:
@@ -143,18 +143,16 @@ def compute_dWi(r):
     
 
 
-def compute_beta(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,r):
+def compute_beta(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes):
     N = len(r_poses)
     n = len(points_between_tcpes[0])
     R = 12
 
     print(f"Number of curves: {N}, Number of points per curve: {n}")
 
-    print(f"W shape: {compute_W(r, n).shape}")
-
     sv = np.array(points_between_tcpes).flatten()
 
-    print(f"sv : {sv}")
+    #print(f"sv : {sv}")
 
     Wv = np.vstack([compute_W(compute_r(r_poses[i], l_poses[i], r_Rs[i], l_Rs[i]), n) for i in range(N)])
 
@@ -180,7 +178,7 @@ class BetaComputer(Node):
 
         self.get_logger().info(f"begining to compute beta")
 
-        self.beta = compute_beta(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,compute_r(r_poses[0], l_poses[0], r_Rs[0], l_Rs[0]))
+        self.beta = compute_beta(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes)
 
         self.get_logger().info(f"beta computed, shape: {self.beta.shape} , starting publishing")
         self.create_timer(0.1, self.publish_beta)  

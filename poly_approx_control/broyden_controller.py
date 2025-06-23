@@ -27,8 +27,8 @@ def trans_to_vecs(trans: TransformStamped):
 
 def compute_r(tr :TransformStamped,tl :TransformStamped):
     """Compute the r vector from the transforms of the left and right end effectors"""
-    r_left, pos_left = trans_to_matrix(tl)
-    r_right, pos_right = trans_to_matrix(tr)
+    r_left, pos_left = trans_to_vecs(tl)
+    r_right, pos_right = trans_to_vecs(tr)
 
     r = np.array([pos_right[0],pos_right[1],pos_right[2],
                   r_right[0],r_right[1],r_right[2],
@@ -39,7 +39,17 @@ def compute_r(tr :TransformStamped,tl :TransformStamped):
 
 def broyden_update(A,ds,dr,gamma=0.01):
     """Update the Jacobian matrix A using Broyden's method"""
-    A = A + gamma * (ds - A @ dr) / dr.T @ dr 
+
+    print(f" A shape: {A.shape}, ds shape: {ds.shape}, dr shape: {dr.shape}")
+    print(f"A @ dr shape: {(A @ dr).shape}, ds shape: {ds.shape}")
+    print(f"dr.T @ dr shape: {(dr.T @ dr).shape}")
+    print(f"ds - A @ dr shape: {(ds - A @ dr).shape}")
+    print(f"dr.T shape: {dr.T.shape}")
+    print(f"  ((ds - A @ dr) / dr.T @ dr ) shape: {((ds - A @ dr) / (dr.T @ dr)).shape}")
+    A = A + gamma * ((ds - A @ dr) / dr.T @ dr ) @ dr.T
+
+
+    return A
 
 M=4 # degree of polynomial
 d=2 # dof of each point
@@ -65,7 +75,7 @@ class PointController(Node):
             10
         )
         
-        self.create_subscription(PointArray,"/curve_target",self.curve_target_callback,1)
+        self.create_subscription(Float32MultiArray,"/curve_target_6dof",self.curve_target_callback,1)
 
         self.create_timer(0.1, self.timer_cb)
         
@@ -74,15 +84,18 @@ class PointController(Node):
 
         self.point_index = 5
 
-        self.ka = 0.0003
+        self.ka = 0.03
+        self.k = 2.0
+        self.vmax = 0.02
+
+        self.init_cmd = np.random.rand(12) * 0.1
+
 
         self.prev_error = np.zeros(6)
         self.integral_error = np.zeros(6)
         self.last_time = self.get_clock().now()
 
-        self.Kp = 1.0
-        self.Ki = 0.2
-        self.Kd = 0.05
+
 
         self.tcp_left = None
         self.tcp_right = None
@@ -97,6 +110,13 @@ class PointController(Node):
 
         self.A = None
         self.gamma = 0.01
+
+        self.cmd_vel_left_pub = self.create_publisher(
+            Twist, "/left/vis_vel_cmd_6dof", 1
+        )
+        self.cmd_vel_right_pub = self.create_publisher(
+            Twist, "/right/vis_vel_cmd_6dof", 1
+        )
 
 
                 
@@ -117,17 +137,11 @@ class PointController(Node):
 
 
     def tcp_right_callback(self, msg):
-        self.get_logger().info(
-            f"tcp_right: position=({msg.transform.translation.x}, {msg.transform.translation.y}, {msg.transform.translation.z}), "
-            f"orientation=({msg.transform.rotation.x}, {msg.transform.rotation.y}, {msg.transform.rotation.z}, {msg.transform.rotation.w})"
-        )
+        
         self.tcp_right = msg
 
     def tcp_left_callback(self, msg):
-        self.get_logger().info(
-            f"tcp_left: position=({msg.transform.translation.x}, {msg.transform.translation.y}, {msg.transform.translation.z}), "
-            f"orientation=({msg.transform.rotation.x}, {msg.transform.rotation.y}, {msg.transform.rotation.z}, {msg.transform.rotation.w})"
-        )
+        
         self.tcp_left = msg
 
     def points3d_callback(self, msg):
@@ -146,14 +160,21 @@ class PointController(Node):
 
             self.last_r = compute_r(self.tcp_right, self.tcp_left)
 
-        ds = self.s - self.last_s
-        r = compute_r(self.tcp_right, self.tcp_left)
-        dr = r - self.last_r
-        if np.linalg.norm(ds) > 0.01 and np.linalg.norm(dr) > 0.01:
-            self.get_logger().info(f"norm ds: {np.linalg.norm(ds)}, norm dr: {np.linalg.norm(dr)}")
+        if self.last_s is not None and self.tcp_left is not None and self.tcp_right is not None:
 
-            self.ds = ds
-            self.dr = dr
+            ds = self.s - self.last_s
+            r = compute_r(self.tcp_right, self.tcp_left)
+            dr = r - self.last_r
+
+            self.norm_ds = np.linalg.norm(ds)
+            self.norm_dr = np.linalg.norm(dr)
+
+
+            if np.linalg.norm(ds) > 0.01 and np.linalg.norm(dr) > 0.01:
+                self.get_logger().info(f"dscand dr initialized, ds: {ds}, dr: {dr}")
+
+                self.ds = ds
+                self.dr = dr
         
 
     def curve_target_callback(self, msg):
@@ -223,7 +244,7 @@ class PointController(Node):
 
 
         if missing_params:
-            self.get_logger().info(f"missing : {', '.join(missing_params)} for writing curve data")
+            self.get_logger().info(f"missing : {', '.join(missing_params)} for computing cmd")
                 
             time.sleep(0.2)  # Sleep to avoid busy waiting
 
@@ -234,23 +255,28 @@ class PointController(Node):
 
                 if self.dr is None:
                     self.get_logger().info(f"dr is None, moving randomly")
-                    dr_cmd = np.random.rand(6) * 0.01
+                    dr_cmd = self.init_cmd.copy()
+                    if self.norm_dr is not None and self.norm_ds is not None:
+                        self.get_logger().info(f"norm dr: {self.norm_dr}, norm ds: {self.norm_ds}")
+                        
 
                 else:
                     self.get_logger().info(f"dr is not None, initializing A")
-                    self.A = broyden_update(np.zeros((12,153)), self.dr, self.ds, gamma=self.gamma)
+                    self.A = broyden_update(np.zeros((153,12)), self.ds, self.dr, gamma=self.gamma)
 
             
             
-                s = self.points3d_data.copy()
-                sstar = self.curve_target_data.copy()
-                ds_cmd = sstar - s
-                #self.get_logger().info(f"ds shape: {ds.shape}")
+                    s = self.points3d_data.copy()
+                    sstar = self.curve_target_data.copy()
+                    ds_cmd = sstar - s
+                    #self.get_logger().info(f"ds shape: {ds.shape}")
 
-                invJ = np.linalg.pinv(self.A)
-                #self.get_logger().info(f"invJ shape: {invJ.shape}")
+                    invJ = np.linalg.pinv(self.A)
+                    #self.get_logger().info(f"invJ shape: {invJ.shape}")
 
-                dr_cmd = invJ @ ds_cmd
+                    dr_cmd = invJ @ ds_cmd
+
+                self.pub_cmd_nn(dr_cmd)
 
 
 

@@ -13,7 +13,7 @@ class CurveWriter(Node):
      
     
         
-        self.sub_poses = self.create_subscription(
+        self.create_subscription(
             Float32MultiArray,
             'points3d',
             self.points3d_callback,

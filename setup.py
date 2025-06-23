@@ -27,6 +27,7 @@ setup(
             "cmd_from_jac = poly_approx_control.cmd_from_jac:main",
             "A_tester = poly_approx_control.A_tester:main",
             "beta_tester = poly_approx_control.beta_tester:main",
+            "broyden_controller = poly_approx_control.broyden_controller:main",
         ],
     },
 )

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 M = 3 # degree of polynomial
 
-P = 10
+P = 30
 
 def read_txt_file(file_path):
     with open(file_path, 'r') as file:
@@ -148,7 +148,7 @@ def compute_beta(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,r):
 
     sv = np.array(points_between_tcpes).flatten()
 
-    print(f"sv : {sv}")
+    #print(f"sv : {sv}")
 
     Wv = np.vstack([compute_W(compute_r(r_poses[i], l_poses[i], r_Rs[i], l_Rs[i]), n) for i in range(N)])
 
@@ -231,16 +231,48 @@ def plot_cable(s,color='b'):
 
 
 
-
+from beta_computer_6dof import compute_beta
 
 
 r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes =read_txt_file("curve_points_datas.txt")
 print(f"points_between_tcpes shape: {np.array(points_between_tcpes).shape}")
+print(f"r_poses shape: {np.array(r_poses).shape}")
+print(f"l_poses shape: {np.array(l_poses).shape}")  
+print(f"r_Rs shape: {np.array(r_Rs).shape}")
+print(f"l_Rs shape: {np.array(l_Rs).shape}")
+
+"""r_poses = np.concatenate([r_poses,r_poses], axis=0)
+l_poses = np.concatenate([l_poses,l_poses], axis=0)
+r_Rs = np.concatenate([r_Rs,r_Rs], axis=0)
+l_Rs = np.concatenate([l_Rs,l_Rs], axis=0)
+points_between_tcpes = np.concatenate([points_between_tcpes,points_between_tcpes], axis=0)
+
+print(f"points_between_tcpes shape: {np.array(points_between_tcpes).shape}")
+print(f"r_poses shape: {np.array(r_poses).shape}")
+print(f"l_poses shape: {np.array(l_poses).shape}")  
+print(f"r_Rs shape: {np.array(r_Rs).shape}")
+print(f"l_Rs shape: {np.array(l_Rs).shape}")
+"""
+
+beta = compute_beta(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes)
 
 A = compute_A(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,compute_r(r_poses[0], l_poses[0], r_Rs[0], l_Rs[0]))
 
-print(f"A : {A}")
 
+
+r = compute_r(r_poses[0], l_poses[0], r_Rs[0], l_Rs[0])
+
+W = compute_W(r, len(points_between_tcpes[0]))
+
+
+s = np.asarray(W @ beta)
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+plot_cable(s,'b')
+
+plt.show()
 
 
 s = np.array(points_between_tcpes[0]).flatten()
