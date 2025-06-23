@@ -1,51 +1,17 @@
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Float32MultiArray
 import numpy as np
+
 from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import TransformStamped
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
-
 M = 3 # degree of polynomial
 
-P = 10
+P = 320
 
-def read_txt_file(file_path):
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
-
-    r_pos, l_pos, r_R, l_R = [], [], [], []
-    points_between_tcp = []
-    curves = []
-
-    i=0
-
-    for line in lines:
-        line = line.strip()
-        if line.startswith("Right TCP:"):
-            i+=1
-
-            if i%P == 0 :r_pos.append(np.array([float(x) for x in line.split(":")[1].split(",")]))
-
-        elif line.startswith("Left TCP:"):
-            if i%P == 0 :l_pos.append(np.array([float(x) for x in line.split(":")[1].split(",")]))
-
-            if i%P == 0 :curves.append(points_between_tcp)
-            points_between_tcp = []  # Reset for the next curve
-
-        elif line.startswith("Right Orientation:"):
-            r_quat = [float(x) for x in line.split(":")[1].split(",")]
-            if i%P == 0 :r_R.append(R.from_quat(r_quat).as_matrix())
-
-        elif line.startswith("Left Orientation:"):
-            l_quat = [float(x) for x in line.split(":")[1].split(",")]
-            if i%P == 0 :l_R.append(R.from_quat(l_quat).as_matrix())
-        elif line.startswith("(") and line.endswith(")"):
-            point = [float(x) for x in line.strip("()").split(",")]
-            if i%P == 0 :points_between_tcp.append(point)
-
-    curves = np.array(curves)
-
-    return r_pos, l_pos, r_R, l_R, curves
 
 
 def trans_to_matrix(trans: TransformStamped):
@@ -91,9 +57,6 @@ def compute_r(r_pos, l_pos, r_R, l_R):
     
     return r
 
-from scipy.spatial.transform import Rotation as R
-import numpy as np
-
 def decompose_r(r):
     """Decompose the r vector into positions and rotation matrices for left and right end effectors"""
     
@@ -137,27 +100,7 @@ def compute_dWi(r):
 
     return dW
 
-def compute_beta(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,r):
-    N = len(r_poses)
-    n = len(points_between_tcpes[0])
-    R = 12
-
-    print(f"Number of curves: {N}, Number of points per curve: {n}")
-
-    print(f"W shape: {compute_W(r, n).shape}")
-
-    sv = np.array(points_between_tcpes).flatten()
-
-    print(f"sv : {sv}")
-
-    Wv = np.vstack([compute_W(compute_r(r_poses[i], l_poses[i], r_Rs[i], l_Rs[i]), n) for i in range(N)])
-
-    invWv = np.linalg.pinv(Wv)
-    beta = (invWv @ sv).transpose()
-
-    print("f beta shape {beta.shape}")
-
-    return np.asarray(beta )
+    
 
 
 def compute_A(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,r):
@@ -209,7 +152,7 @@ def compute_A(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,r):
 
     return A
 
-def plot_cable(s,color='b'):
+def plot_cable(s,ax,color='b'):
     """
     Plots a 3D cable given its points.
     
@@ -231,70 +174,100 @@ def plot_cable(s,color='b'):
 
 
 
+def read_txt_file(file_path):
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+
+    r_pos, l_pos, r_R, l_R = [], [], [], []
+    points_between_tcp = []
+    curves = []
+
+    i=0
+
+    for line in lines:
+        line = line.strip()
+        if line.startswith("Right TCP:"):
+            i+=1
+
+            if i%P == 0 :r_pos.append(np.array([float(x) for x in line.split(":")[1].split(",")]))
+
+        elif line.startswith("Left TCP:"):
+            if i%P == 0 :l_pos.append(np.array([float(x) for x in line.split(":")[1].split(",")]))
+
+            if i%P == 0 :curves.append(points_between_tcp)
+            points_between_tcp = []  # Reset for the next curve
+
+        elif line.startswith("Right Orientation:"):
+            r_quat = [float(x) for x in line.split(":")[1].split(",")]
+            if i%P == 0 :r_R.append(R.from_quat(r_quat).as_matrix())
+
+        elif line.startswith("Left Orientation:"):
+            l_quat = [float(x) for x in line.split(":")[1].split(",")]
+            if i%P == 0 :l_R.append(R.from_quat(l_quat).as_matrix())
+        elif line.startswith("(") and line.endswith(")"):
+            point = [float(x) for x in line.strip("()").split(",")]
+            if i%P == 0 :points_between_tcp.append(point)
+
+    curves = np.array(curves)
+
+    return r_pos, l_pos, r_R, l_R, curves
+
+class BetaTesterNode(Node):
+    def __init__(self):
+        super().__init__('beta_tester')
+        self.subscription = self.create_subscription(
+            Float32MultiArray,
+            '/beta',
+            self.beta_callback,
+            10
+        )
+        self.get_logger().info("beta_tester node is running and listening to /beta topic.")
+
+    def beta_callback(self, msg):
+
+        beta = np.array(msg.data)
+
+        r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes =read_txt_file("curve_points_datas.txt")
+
+        r = compute_r(r_poses[0], l_poses[0], r_Rs[0], l_Rs[0])
+
+        W = compute_W(r, len(points_between_tcpes[0]))
+
+        print(f"Computed W shape: {W.shape}")
+        print(f"Received beta shape: {beta.shape}")
+
+        s = np.asarray(W @ beta)
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+
+        plot_cable(s,ax)
+
+        plt.show()
 
 
 
-r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes =read_txt_file("curve_points_datas.txt")
-print(f"points_between_tcpes shape: {np.array(points_between_tcpes).shape}")
-
-A = compute_A(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,compute_r(r_poses[0], l_poses[0], r_Rs[0], l_Rs[0]))
-
-print(f"A : {A}")
 
 
 
-s = np.array(points_between_tcpes[0]).flatten()
 
 
-drs = np.eye(12) * 0.01
 
 
-for dr in drs:
-    ds = A @ dr.transpose()
-    s1 = np.asarray(s + ds)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    print(f"s shape: {s.shape}")
-    print(f"s1 shape: {s1.reshape(153,).shape}")
-
-    print(f"dr {dr}")
-
-    plot_cable(s, color='b')
 
 
-    plot_cable(s1.reshape(153,), color='r')
-    plt.show()
 
-s_star = np.array(points_between_tcpes[7]).flatten()
-
-ds = s_star - s
-
-
-invA = np.linalg.pinv(A)
-
-dr = - invA @ ds
-
-dr_pos, dl_pos, dvr, dvl = decompose_r(dr.transpose())
-
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-
-lp = np.array(l_poses[0])
-rp = np.array(r_poses[0])
+def main(args=None):
+    rclpy.init(args=args)
+    node = BetaTesterNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
-# Plot position vectors
-ax.quiver(rp[0],rp[1],rp[2], dr_pos[0], dr_pos[1], dr_pos[2], color='red', label='dr_pos')
-ax.quiver(lp[0],lp[1],lp[2], dl_pos[0], dl_pos[1], dl_pos[2], color='red', linestyle='dashed', label='dl_pos')
-
-# Plot rotation vectors
-ax.quiver(rp[0], rp[1], rp[2], dvr[0], dvr[1], dvr[2], color='blue', label='dvr')
-ax.quiver(lp[0], lp[1], lp[2], dvl[0], dvl[1], dvl[2], color='blue', linestyle='dashed', label='dvl')
-ax.legend()
-# Example usage
-plot_cable(s)
-plot_cable(s_star, color='green')
-
-plt.show()
+if __name__ == '__main__':
+    main()

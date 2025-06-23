@@ -25,6 +25,8 @@ setup(
             "beta_computer = poly_approx_control.beta_computer_6dof:main",
             "A_init_computer = poly_approx_control.A_init_computer:main",
             "cmd_from_jac = poly_approx_control.cmd_from_jac:main",
+            "A_tester = poly_approx_control.A_tester:main",
+            "beta_tester = poly_approx_control.beta_tester:main",
         ],
     },
 )

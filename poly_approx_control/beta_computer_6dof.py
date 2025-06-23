@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 M = 3 # degree of polynomial
 
-P = 10
+P = 80
 
 def read_txt_file(file_path):
     with open(file_path, 'r') as file:
@@ -153,6 +153,8 @@ def compute_beta(r_poses, l_poses, r_Rs, l_Rs, points_between_tcpes,r):
     print(f"W shape: {compute_W(r, n).shape}")
 
     sv = np.array(points_between_tcpes).flatten()
+
+    print(f"sv : {sv}")
 
     Wv = np.vstack([compute_W(compute_r(r_poses[i], l_poses[i], r_Rs[i], l_Rs[i]), n) for i in range(N)])
 
