@@ -81,6 +81,8 @@ class PointController(Node):
         self.create_subscription(Float32MultiArray,"/curve_target_6dof",self.curve_target_callback,1)
 
         self.create_timer(0.1, self.timer_cb)
+
+        self.create_timer(1.0, self.broyden_cb)
         
         
         self.curve_target_data = None
@@ -147,6 +149,55 @@ class PointController(Node):
         
         self.tcp_left = msg
 
+    def broyden_cb(self):
+        missing_params = []
+        if self.points3d_data is None:
+            missing_params.append("points3d_data")
+        if self.tcp_left is None:
+            missing_params.append("tcp_left")
+        if self.tcp_right is None:
+            missing_params.append("tcp_right")
+
+
+        if missing_params:
+            self.get_logger().info(f"missing : {', '.join(missing_params)} for Broyden update")
+                
+            time.sleep(0.2)  # Sleep to avoid busy waiting
+
+        else:
+
+            if self.last_s is None:
+                self.last_s = self.points3d_data
+                self.last_r = compute_r(self.tcp_right, self.tcp_left)
+
+                self.get_logger().info(f"Initializing last_s and last_r and publishing initial command")
+                self.pub_cmd_nn(self.init_cmd)
+                return
+            
+            ds = self.points3d_data - self.last_s
+            dr = compute_r(self.tcp_right, self.tcp_left) - self.last_r
+            norm_ds = np.linalg.norm(ds)
+            norm_dr = np.linalg.norm(dr)
+
+            if norm_dr < 0.01 or norm_ds < 0.01:
+                self.get_logger().info(f"norm ds or dr too small, skipping broyden update")
+
+                if self.A is None :
+                    self.get_logger().info(f"A is None,pubing initial command")
+                    self.pub_cmd_nn(self.init_cmd)
+                return
+            
+            if self.A is None:
+                self.get_logger().info(f"A is None, initializing A")
+                self.A = np.zeros((153, 12))  
+                self.A = broyden_update(self.A, ds, dr, gamma=1)
+
+            else:
+                self.get_logger().info(f"Updating A with broyden update")
+                self.A = broyden_update(self.A, ds, dr, gamma=self.gamma)
+
+
+
     def points3d_callback(self, msg):
 
         self.points3d_data = np.array(msg.data).reshape(-1, 1)
@@ -155,38 +206,11 @@ class PointController(Node):
         #self.get_logger().info(f"Points3D data shape : {self.points3d_data.shape}")
 
         self.last_points3d_time = self.get_clock().now()
-        #self.get_logger().info(f"last_points3d_time: {self.last_points3d_time}")
-
-        if self.last_s is None and self.tcp_left is not None and self.tcp_right is not None:
-            self.get_logger().info("Initializing last_s and last_r with current data")
-            self.last_s = self.points3d_data.copy()
-
-            self.last_r = compute_r(self.tcp_right, self.tcp_left)
-
-        if self.last_s is not None and self.tcp_left is not None and self.tcp_right is not None:
-
-            ds = self.s - self.last_s
-            r = compute_r(self.tcp_right, self.tcp_left)
-            dr = r - self.last_r
-
-            self.norm_ds = np.linalg.norm(ds)
-            self.norm_dr = np.linalg.norm(dr)
-
-
-            if np.linalg.norm(ds) > 0.01 and np.linalg.norm(dr) > 0.01:
-                self.get_logger().info(f"ds and dr initialized")
-
-                self.ds = ds
-                self.dr = dr
-
-            
         
-
     def curve_target_callback(self, msg):
-        self.get_logger().info(f"Received Curve Target message: {msg}")
         self.curve_target_data = np.array(msg.data).reshape(-1, 1)
 
-        self.get_logger().info(f"Processed Curve Target data (shape {self.curve_target_data.shape}): {self.curve_target_data}")
+        self.get_logger().info(f"Received target shape")
 
     def pub_cmd_nn(self,dr):
         """Publishes the command velocities to the robot for the nn dr"""
@@ -246,42 +270,26 @@ class PointController(Node):
             missing_params.append("tcp_left")
         if self.tcp_right is None:
             missing_params.append("tcp_right")
-
+        if self.A is None:
+            missing_params.append("A")
 
         if missing_params:
             self.get_logger().info(f"missing : {', '.join(missing_params)} for computing cmd")
-                
             time.sleep(0.2)  # Sleep to avoid busy waiting
 
         else:
 
-            if self.A is None:
-                self.get_logger().info("jacobian_data is not set")
+            s = self.points3d_data.copy()
+            sstar = self.curve_target_data.copy()
+            ds_cmd = sstar - s
+            #self.get_logger().info(f"ds shape: {ds.shape}")
 
-                if self.dr is None:
-                    self.get_logger().info(f"dr is None, moving randomly")
-                    dr_cmd = self.init_cmd.copy()
-                    if self.norm_dr is not None and self.norm_ds is not None:
-                        self.get_logger().info(f"norm dr: {self.norm_dr}, norm ds: {self.norm_ds}")
-                        
+            invJ = np.linalg.pinv(self.A)
+            #self.get_logger().info(f"invJ shape: {invJ.shape}")
 
-                else:
-                    self.get_logger().info(f"dr is not None, initializing A")
-                    self.A = broyden_update(np.zeros((153,12)), self.ds, self.dr, gamma=self.gamma)
+            dr_cmd = invJ @ ds_cmd
 
-            
-            
-                    s = self.points3d_data.copy()
-                    sstar = self.curve_target_data.copy()
-                    ds_cmd = sstar - s
-                    #self.get_logger().info(f"ds shape: {ds.shape}")
-
-                    invJ = np.linalg.pinv(self.A)
-                    #self.get_logger().info(f"invJ shape: {invJ.shape}")
-
-                    dr_cmd = invJ @ ds_cmd
-
-                self.pub_cmd_nn(dr_cmd)
+            self.pub_cmd_nn(dr_cmd)
 
 
 

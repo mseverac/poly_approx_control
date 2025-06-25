@@ -41,17 +41,17 @@ class VisualServoingController(Node):
         kl = 0.015
         ka = 0.1
 
-        t = 1.2  # Time to move in each direction
-        ta = 3.0
+        t = 15  # Time to move in each direction
+        ta = 8.0
         # Define the movement steps
         movements = [
                 # Mouvements positifs
-                {"linear_x": kl, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
+                {"linear_x": kl/2, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
                 {"linear_x": 0.0, "linear_y": kl, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
                 {"linear_x": 0.0, "linear_y": 0.0, "linear_z": kl, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
 
 
-                {"linear_x": -kl, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
+                {"linear_x": -kl/2, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
                 {"linear_x": 0.0, "linear_y": -kl, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
                 {"linear_x": 0.0, "linear_y": 0.0, "linear_z": -kl, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
 
@@ -69,7 +69,9 @@ class VisualServoingController(Node):
         self.get_logger().info("Starting movement sequence...")
         time.sleep(1)  # Wait for the system to stabilize
         # Publish the writer_on message
-        self.writer_pub.publish(Bool(data=True))
+
+        for i in range(10):
+            self.writer_pub.publish(Bool(data=True))
         self.get_logger().info("Writer is ON, starting movements...")
 
         for movement in movements:
@@ -93,7 +95,8 @@ class VisualServoingController(Node):
 
         self.get_logger().info("Movement sequence completed.")
         # Publish the writer_off message
-        self.writer_pub.publish(Bool(data=False))
+        for i in range(10):
+            self.writer_pub.publish(Bool(data=False))
 
 
 
@@ -102,7 +105,7 @@ class VisualServoingController(Node):
     def publish_left_movement(self, movement):
         # Create Twist message for left
         left_twist = Twist()
-        left_twist.linear.x = movement["linear_x"]
+        left_twist.linear.x = -movement["linear_x"]
         left_twist.linear.y = movement["linear_y"]
         left_twist.linear.z = movement["linear_z"]
         left_twist.angular.x = movement["angular_x"]

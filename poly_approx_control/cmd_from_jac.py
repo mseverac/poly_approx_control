@@ -18,9 +18,9 @@ class Ros2ControllerNode(Node):
 
 
         #gains pour dlo_nn
-        self.k = 1000
+        self.k = 1
         self.ka = 0.01
-        self.vmax = 0.005
+        self.vmax = 0.05
 
         self.max_time_diff = 0.1  # seconds
         # Subscribers
@@ -175,6 +175,8 @@ class Ros2ControllerNode(Node):
 
         self.get_logger().info(f"------ Command velocities ---")
 
+        self.get_logger().info(f"dr: {dr}")
+
         # dr = [linear_r(0:3), angular_r(3:6), linear_l(6:9), angular_l(9:12)]
         self.get_logger().info(f"norm right linear dr : {np.linalg.norm(dr[0:3])}")
         self.get_logger().info(f"norm right angular dr : {np.linalg.norm(dr[3:6])}")
@@ -184,6 +186,8 @@ class Ros2ControllerNode(Node):
         self.get_logger().info(f"***************")
 
         dr = self.vmax * np.tanh(self.k * dr.astype(float).flatten())
+
+        self.get_logger().info(f"dr after saturation: {dr}")
 
         def decompose_r(r):
             """Decompose the r vector into positions and rotation matrices for left and right end effectors"""

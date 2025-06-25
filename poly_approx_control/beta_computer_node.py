@@ -229,7 +229,7 @@ class BetaComputerNode(Node):
             A_msg.data = A.flatten().tolist()
             self.A_pub.publish(A_msg)
             self.get_logger().info(f"Published A matrix with shape: {A.shape}")
-            self.get_logger().info(f"First row of A: {A[0].reshape(6,-1)}")
+            self.get_logger().info(f"First row of A: {A[0]}")
             self.get_logger().info(f"Second row of A: {A[1]}")
             self.get_logger().info(f"Third row of A: {A[2]}")
             self.get_logger().info(f"-3 row of A: {A[-3]}")
