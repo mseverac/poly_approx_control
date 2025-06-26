@@ -4,7 +4,6 @@ from std_msgs.msg import Float32MultiArray,Header,Float64MultiArray
 from geometry_msgs.msg import Point, Twist,TwistStamped
 import numpy as np
 
-from ur_msgs.msg import PointArray  
 from visualization_msgs.msg import Marker
 from scipy.spatial.transform import Rotation as R
 
@@ -26,7 +25,7 @@ class Ros2ControllerNode(Node):
         # Subscribers
         self.create_subscription(Float64MultiArray, '/A_init', self.jacobian_callback, 10)
         self.create_subscription(Float32MultiArray, '/curve_target_6dof', self.curve_target_callback, 10)
-        self.create_subscription(Float32MultiArray, "/points3d", self.points3d_callback, 10)
+        self.create_subscription(Float32MultiArray, "/cosserat_shape", self.points3d_callback, 10)
 
         
         
