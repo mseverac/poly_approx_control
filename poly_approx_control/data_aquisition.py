@@ -39,13 +39,23 @@ class VisualServoingController(Node):
     def move_in_degrees_of_freedom(self):
 
         kl = 0.015
-        ka = 0.1
+        ka = 0.12
 
-        t = 15  # Time to move in each direction
-        ta = 8.0
+        t = 5  # Time to move in each direction
+        ta = 5.0
         # Define the movement steps
         movements = [
                 # Mouvements positifs
+
+                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": ka, "angular_y": 0.0, "angular_z": 0.0,"angular ": True},
+                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": ka, "angular_z": 0.0,"angular ": True},
+                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": ka,"angular ": True},
+                
+                
+                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": -ka, "angular_y": 0.0, "angular_z": 0.0,"angular ": True},
+                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": -ka, "angular_z": 0.0,"angular ": True},
+                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": -ka,"angular ": True},
+
                 {"linear_x": kl/2, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
                 {"linear_x": 0.0, "linear_y": kl, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
                 {"linear_x": 0.0, "linear_y": 0.0, "linear_z": kl, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
@@ -56,14 +66,7 @@ class VisualServoingController(Node):
                 {"linear_x": 0.0, "linear_y": 0.0, "linear_z": -kl, "angular_x": 0.0, "angular_y": 0.0, "angular_z": 0.0,"angular ": False},
 
 
-                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": ka, "angular_y": 0.0, "angular_z": 0.0,"angular ": True},
-                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": ka, "angular_z": 0.0,"angular ": True},
-                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": ka,"angular ": True},
-                
-                
-                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": -ka, "angular_y": 0.0, "angular_z": 0.0,"angular ": True},
-                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": -ka, "angular_z": 0.0,"angular ": True},
-                {"linear_x": 0.0, "linear_y": 0.0, "linear_z": 0.0, "angular_x": 0.0, "angular_y": 0.0, "angular_z": -ka,"angular ": True},
+
             ]
         
         self.get_logger().info("Starting movement sequence...")
@@ -120,9 +123,9 @@ class VisualServoingController(Node):
         right_twist.linear.x = movement["linear_x"]
         right_twist.linear.y = movement["linear_y"]
         right_twist.linear.z = movement["linear_z"]
-        right_twist.angular.x = -movement["angular_x"]
-        right_twist.angular.y = -movement["angular_y"]
-        right_twist.angular.z = -movement["angular_z"]
+        right_twist.angular.x = movement["angular_x"]
+        right_twist.angular.y = movement["angular_y"]
+        right_twist.angular.z = movement["angular_z"]
         # Publish the message
         self.right_vis_vel_pub.publish(right_twist)
 

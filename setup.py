@@ -30,6 +30,7 @@ setup(
             "broyden_controller = poly_approx_control.broyden_controller:main",
             "beta_computer_node = poly_approx_control.beta_computer_node:main",
             "manual_curve_writer = poly_approx_control.manual_curve_writer:main",
+            "ds_dr_pub = poly_approx_control.ds_dr_pub:main",
         ],
     },
 )
