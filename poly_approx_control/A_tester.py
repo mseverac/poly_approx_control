@@ -42,7 +42,10 @@ class ATester(Node):
 
         if self.A is not None :
 
-            drs = np.eye(12) * 0.05
+            dx = 0.05
+            da = 0.5
+
+            drs = np.diag([dx,dx,dx,da,da,da,dx,dx,dx,da,da,da]) 
             fig, axs = plt.subplots(3, 4, subplot_kw={'projection': '3d'}, figsize=(15, 10))
             axs = axs.flatten()  # Flatten the 3x4 grid for easier indexing
 
@@ -172,7 +175,7 @@ class ATester(Node):
             
             test_cmd(self.s)
 
-            P = 50
+            P = 1
 
             def read_txt_file(file_path):
                 with open(file_path, 'r') as file:
@@ -216,7 +219,18 @@ class ATester(Node):
 
             self.get_logger().info(f"Read {len(points_between_tcpes)} curves from file.")
 
-            
+            for i, s in enumerate(points_between_tcpes):
+                self.get_logger().info(f"s[-1]: {s[-1]}, s[0]: {s[0]}, r_poses[{i}]: {r_poses[i]}, l_poses[{i}]: {l_poses[i]}")
+                print("------------------------")
+                print(f"dist right : {np.linalg.norm(s[0]-r_poses[i])}")
+                print(f"dist left : {np.linalg.norm(s[-1]-l_poses[i])}")
+
+                for j in range(1, 6):
+                    print(f"dist right s{j} : {np.linalg.norm(s[j]-r_poses[i])}")
+                    print(f"dist left s{j}  : {np.linalg.norm(s[-j-1]-l_poses[i])}")
+
+                print("------------------------")
+
             for s in points_between_tcpes:
                 test_cmd(np.array(s).reshape(-1,))
 
