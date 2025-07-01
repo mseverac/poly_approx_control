@@ -66,8 +66,6 @@ def broyden_update(A,ds,dr,gamma=0.01):
 
     return A
 
-
-
 class Broyden_controller_s_Ainit(Node):
     def __init__(self):
         super().__init__('Broyden_controller_s_Ainit')

@@ -43,60 +43,119 @@ class ATester(Node):
         if self.A is not None :
 
             dx = 0.05
-            da = 0.5
+            da = 0.1
 
-            drs = np.diag([dx,dx,dx,da,da,da,dx,dx,dx,da,da,da]) 
-            fig, axs = plt.subplots(3, 4, subplot_kw={'projection': '3d'}, figsize=(15, 10))
-            axs = axs.flatten()  # Flatten the 3x4 grid for easier indexing
+            def plot_jac_3d(A,s,dx=0.05,da=0.5):
 
-            for i, dr in enumerate(drs):
-                self.get_logger().info(f"Computing ds for dr: {dr.transpose()}")
-                ds = self.A @ dr.transpose()
-                s1 = self.s + ds
+                drs = np.diag([dx,dx,dx,da,da,da,dx,dx,dx,da,da,da]) 
+                fig, axs = plt.subplots(3, 4, subplot_kw={'projection': '3d'}, figsize=(15, 10))
+                axs = axs.flatten()  # Flatten the 3x4 grid for easier indexing
 
-                def plot_cable(ax, s, color='b', label='Cable'):
+                for i, dr in enumerate(drs):
+                    self.get_logger().info(f"Computing ds for dr: {dr.transpose()}")
+                    ds = A @ dr.transpose()
+                    s1 = s + ds
+
+                    def plot_cable(ax, s, color='b', label='Cable'):
+                        """
+                        Plots a 3D cable given its points on a specific subplot.
+                        
+                        Parameters:
+                            ax (matplotlib.axes._subplots.Axes3DSubplot): The subplot to plot on.
+                            s (numpy.ndarray): A (51, 3) array representing the cable points (x, y, z).
+                            color (str): Color of the cable plot.
+                            label (str): Label for the cable plot.
+                        """
+                        if s.shape != (51, 3):
+                            s = s.reshape(-1, 3)  # Ensure s is reshaped to (51, 3)
+                        
+                        ax.plot(s[:, 0], s[:, 1], s[:, 2], marker='o', label=label, color=color)
+                        ax.set_xlabel('X')
+                        ax.set_ylabel('Y')
+                        ax.set_zlabel('Z')
+                        ax.set_title(f'Cable {i+1}')
+                        ax.legend()
+                        
+                        # Set equal aspect ratio for isometric view
+                        x_limits = ax.get_xlim()
+                        y_limits = ax.get_ylim()
+                        z_limits = ax.get_zlim()
+                        max_range = max(
+                            x_limits[1] - x_limits[0],
+                            y_limits[1] - y_limits[0],
+                            z_limits[1] - z_limits[0]
+                        ) / 2.0
+
+                        mid_x = (x_limits[0] + x_limits[1]) * 0.5
+                        mid_y = (y_limits[0] + y_limits[1]) * 0.5
+                        mid_z = (z_limits[0] + z_limits[1]) * 0.5
+
+                        ax.set_xlim(mid_x - max_range, mid_x + max_range)
+                        ax.set_ylim(mid_y - max_range, mid_y + max_range)
+                        ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+                    plot_cable(axs[i], s1, color='r', label='Modified Cable')
+                    plot_cable(axs[i], s, color='b', label='Original Cable')
+
+                plt.tight_layout()
+                plt.show()
+
+            def plot_jac_2d(A, s, dx=0.05, da=0.5):
+                import matplotlib.pyplot as plt
+                import numpy as np
+
+                drs = np.diag([dx, dx, dx, da, da, da, dx, dx, dx, da, da, da])
+
+                def plot_projection(ax, s_orig, s_mod, proj='zx', title=''):
                     """
-                    Plots a 3D cable given its points on a specific subplot.
+                    Plots a 2D projection of the cable deformation.
                     
                     Parameters:
-                        ax (matplotlib.axes._subplots.Axes3DSubplot): The subplot to plot on.
-                        s (numpy.ndarray): A (51, 3) array representing the cable points (x, y, z).
-                        color (str): Color of the cable plot.
-                        label (str): Label for the cable plot.
+                        ax: matplotlib axis
+                        s_orig: original cable shape (51,3)
+                        s_mod: modified cable shape (51,3)
+                        proj: 'zx' or 'zy'
+                        title: title of the subplot
                     """
-                    if s.shape != (51, 3):
-                        s = s.reshape(-1, 3)  # Ensure s is reshaped to (51, 3)
-                    
-                    ax.plot(s[:, 0], s[:, 1], s[:, 2], marker='o', label=label, color=color)
-                    ax.set_xlabel('X')
-                    ax.set_ylabel('Y')
-                    ax.set_zlabel('Z')
-                    ax.set_title(f'Cable {i+1}')
-                    ax.legend()
-                    
-                    # Set equal aspect ratio for isometric view
-                    x_limits = ax.get_xlim()
-                    y_limits = ax.get_ylim()
-                    z_limits = ax.get_zlim()
-                    max_range = max(
-                        x_limits[1] - x_limits[0],
-                        y_limits[1] - y_limits[0],
-                        z_limits[1] - z_limits[0]
-                    ) / 2.0
+                    s_orig = s_orig.reshape(-1, 3)
+                    s_mod = s_mod.reshape(-1, 3)
 
-                    mid_x = (x_limits[0] + x_limits[1]) * 0.5
-                    mid_y = (y_limits[0] + y_limits[1]) * 0.5
-                    mid_z = (z_limits[0] + z_limits[1]) * 0.5
+                    if proj == 'zx':
+                        ax.plot(s_orig[:, 0], s_orig[:, 2], label='Original', color='b')
+                        ax.plot(s_mod[:, 0], s_mod[:, 2], label='Modified', color='r')
+                        ax.set_xlabel('X')
+                        ax.set_ylabel('Z')
+                    elif proj == 'zy':
+                        ax.plot(s_orig[:, 1], s_orig[:, 2], label='Original', color='b')
+                        ax.plot(s_mod[:, 1], s_mod[:, 2], label='Modified', color='r')
+                        ax.set_xlabel('Y')
+                        ax.set_ylabel('Z')
 
-                    ax.set_xlim(mid_x - max_range, mid_x + max_range)
-                    ax.set_ylim(mid_y - max_range, mid_y + max_range)
-                    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+                    ax.set_title(title)
+                    ax.grid(True)
 
-                plot_cable(axs[i], s1, color='r', label='Modified Cable')
-                plot_cable(axs[i], self.s, color='b', label='Original Cable')
+                for window in range(2):
+                    fig, axs = plt.subplots(2, 6, figsize=(18, 6))  # 2 rows: zx and zy, 6 columns
+                    axs = axs.reshape(2, 6)
 
-            plt.tight_layout()
-            plt.show()
+                    for i in range(6):
+                        idx = i + window * 6
+                        dr = drs[idx]
+                        ds = A @ dr
+                        s1 = s + ds
+
+                        plot_projection(axs[0, i], s, s1, proj='zx', title=f'dr[{idx}] - Z vs X')
+                        plot_projection(axs[1, i], s, s1, proj='zy', title=f'dr[{idx}] - Z vs Y')
+
+                    plt.tight_layout()
+                    plt.suptitle(f'Jacobian Columns {window*6 + 1} to {window*6 + 6}', fontsize=16)
+                    plt.subplots_adjust(top=0.88)
+                    plt.show()
+
+
+            plot_jac_2d(self.A,self.s,dx=dx,da=da)
+
+            plot_jac_3d(self.A,self.s,dx=dx,da=da)
 
             self.get_logger().info("Waiting fr target to plot example cmd ")
 
