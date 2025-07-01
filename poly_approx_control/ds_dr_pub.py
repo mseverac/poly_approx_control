@@ -78,6 +78,8 @@ class DsDrPub(Node):
         self.s_pub = self.create_publisher(Float32MultiArray, '/s', 10)
 
         self.dr_pub = self.create_publisher(Float32MultiArray, '/dr', 10)
+        self.delta_pub = self.create_publisher(Float32MultiArray, '/s_ls_dr', 10)
+
 
         self.last_s_pub_viz = self.create_publisher(Marker, 'last_s_marker', 10)
         self.s_pub_viz = self.create_publisher(Marker, 's_marker', 10)
@@ -160,10 +162,7 @@ class DsDrPub(Node):
 
         max_norm = np.max(norms_ds)
 
-        self.get_logger().info(f"ds: {ds.reshape(-1,3)}")
-        self.get_logger().info(f"norms_ds: {norms_ds}")
-        self.get_logger().info(f"max_norm: {max_norm}")
-        self.get_logger().info(f"dr : {dr.reshape(-1,1)}")
+
 
         def viz_ds_dr(s,last_s,dr):
 
@@ -199,7 +198,24 @@ class DsDrPub(Node):
 
         if max_norm > 0.01 :
 
+            
+            self.get_logger().info(f"ds: {ds.reshape(-1,3)}")
+            self.get_logger().info(f"norms_ds: {norms_ds}")
+            self.get_logger().info(f"max_norm: {max_norm}")
+            self.get_logger().info(f"dr : {dr.reshape(-1,1)}")
             viz_ds_dr(self.s,self.last_s,dr)
+
+            """self.get_logger().info(f"s shape: {self.s.shape}")
+            self.get_logger().info(f"last_s shape: {self.last_s.shape}")
+            self.get_logger().info(f"dr shape: {dr.shape}")
+            self.get_logger().info(f"s ls dr shape: {s_ls_dr.shape}")"""
+
+            s_ls_dr = np.concatenate((self.s,self.last_s,dr))
+            delta_msg = Float32MultiArray()
+            delta_msg.data = s_ls_dr.tolist()
+            self.delta_pub.publish(delta_msg)
+
+
             s_msg = Float32MultiArray()
             s_msg.data = self.s.tolist()
             self.s_pub.publish(s_msg)
@@ -214,6 +230,7 @@ class DsDrPub(Node):
 
             self.last_r = r 
             self.last_s = self.s 
+
 
 
 

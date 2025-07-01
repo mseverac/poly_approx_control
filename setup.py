@@ -31,6 +31,10 @@ setup(
             "beta_computer_node = poly_approx_control.beta_computer_node:main",
             "manual_curve_writer = poly_approx_control.manual_curve_writer:main",
             "ds_dr_pub = poly_approx_control.ds_dr_pub:main",
+            "broyden_controller_senza_A_init = poly_approx_control.broyden_controller_senza_A_init:main",
+            "broyden_controller_w_A_init = poly_approx_control.broyden_controller_w_A_init:main",
+            "A_tester_real = poly_approx_control.A_tester_real:main",
+
         ],
     },
 )

@@ -8,7 +8,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float64, Float64MultiArray,MultiArrayDimension,Float32MultiArray
 import time
 
-M = 3 # degree of polynomial
+M = 2 # degree of polynomial
 P = 1
 
 def read_txt_file(file_path):
