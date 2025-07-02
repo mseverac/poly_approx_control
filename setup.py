@@ -34,6 +34,7 @@ setup(
             "broyden_controller_senza_A_init = poly_approx_control.broyden_controller_senza_A_init:main",
             "broyden_controller_w_A_init = poly_approx_control.broyden_controller_w_A_init:main",
             "A_tester_real = poly_approx_control.A_tester_real:main",
+            "poly_approx_controller = poly_approx_control.poly_approx_controller:main",
 
         ],
     },

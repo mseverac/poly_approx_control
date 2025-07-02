@@ -87,7 +87,7 @@ class DsDrPub(Node):
         
         self.create_timer(0.2,self.timer_cb)
 
-
+        self.seuil = 0.001
         
         self.s = None
         self.tcp_l = None
@@ -196,7 +196,7 @@ class DsDrPub(Node):
             dr_l_msg.twist.angular.z = vl[2]
             self.dr_l_pub.publish(dr_l_msg)
 
-        if max_norm > 0.01 :
+        if max_norm > self.seuil :
 
             
             self.get_logger().info(f"ds: {ds.reshape(-1,3)}")

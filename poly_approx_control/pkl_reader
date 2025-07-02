@@ -1,0 +1,27 @@
+import os
+import pickle
+
+# Nom du fichier cible
+target_filename = "20250701_124404_seq0_points.pkl"
+
+# Recherche récursive du fichier
+found_path = None
+for root, dirs, files in os.walk(os.getcwd()):
+    if target_filename in files:
+        found_path = os.path.join(root, target_filename)
+        break
+
+# Si le fichier est trouvé, on le lit
+if found_path:
+    print(f"Fichier trouvé : {found_path}")
+    with open(found_path, 'rb') as f:
+        data = pickle.load(f)
+        print("Contenu du fichier :")
+        print(data)
+        print("point")
+        print(data["points"])
+        print("shape")
+        print(data["points"].shape)
+
+else:
+    print(f"Le fichier '{target_filename}' n'a pas été trouvé dans les sous-dossiers de : {os.getcwd()}")

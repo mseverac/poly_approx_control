@@ -73,13 +73,14 @@ class Broyden_controller_s_Ainit(Node):
 
         self.curve_target_data = None
 
-        self.ka = 0.1
-        self.k = 0.0001
+        self.ka_far = 0.1
+        self.ka_near = 1
+        self.k = 10
         self.vmax = 0.02
 
         self.s_star = None
 
-        self.gamma = 0.01
+        self.gamma = 0.1
 
         self.cmd_vel_left_pub = self.create_publisher(
             Twist, "/left/vis_vel_cmd_6dof", 1
@@ -107,6 +108,16 @@ class Broyden_controller_s_Ainit(Node):
 
         self.A = np.array(msg.data).reshape(153,12)
 
+        A = self.A
+
+        self.get_logger().info(f"First row of A: {A[0]}")
+        self.get_logger().info(f"Second row of A: {A[1]}")
+        self.get_logger().info(f"Third row of A: {A[2]}")
+        self.get_logger().info(f"-3 row of A: {A[-3]}")
+        self.get_logger().info(f"-2 row of A: {A[-2]}")
+        self.get_logger().info(f"-1 row of A: {A[-1]}")
+
+
 
 
 
@@ -127,6 +138,13 @@ class Broyden_controller_s_Ainit(Node):
 
 
         self.get_logger().info(f"k : {self.k}")
+
+        if np.linalg.norm(dr[0:3]) < 0.01 and np.linalg.norm(dr[6:9]) < 0.01 : 
+            ka = self.ka_near
+            self.get_logger().info(f"using ka near (ka = {ka})")
+        else:
+            ka = self.ka_far
+            self.get_logger().info(f"using ka far (ka = {ka})")
 
         dr = self.vmax * np.tanh(self.k * dr.astype(float).flatten())
 
@@ -149,17 +167,17 @@ class Broyden_controller_s_Ainit(Node):
         cmd_right.linear.x = dr[0]
         cmd_right.linear.y = -dr[2]
         cmd_right.linear.z = dr[1]
-        cmd_right.angular.x = dr[3] * self.ka
-        cmd_right.angular.y = -dr[5] * self.ka
-        cmd_right.angular.z = dr[4] * self.ka
+        cmd_right.angular.x = dr[3] * ka
+        cmd_right.angular.y = -dr[5] * ka
+        cmd_right.angular.z = dr[4] * ka
 
         viz_cmd_right = Twist()
         viz_cmd_right.linear.x = dr[0]
         viz_cmd_right.linear.y = dr[2]
         viz_cmd_right.linear.z = dr[1]
-        viz_cmd_right.angular.x = dr[3] * self.ka
-        viz_cmd_right.angular.y = dr[5] * self.ka
-        viz_cmd_right.angular.z = dr[4] * self.ka
+        viz_cmd_right.angular.x = dr[3] * ka
+        viz_cmd_right.angular.y = dr[5] * ka
+        viz_cmd_right.angular.z = dr[4] * ka
         self.cmd_vel_right_pubs.publish(TwistStamped(
             header=Header(stamp=self.get_clock().now().to_msg(),
                    frame_id="fixed_right_gripper_bf"), twist=viz_cmd_right))
@@ -168,25 +186,21 @@ class Broyden_controller_s_Ainit(Node):
         viz_cmd_left.linear.x = dr[6]
         viz_cmd_left.linear.y = dr[8]
         viz_cmd_left.linear.z = dr[7]
-        viz_cmd_left.angular.x = dr[9] * self.ka
-        viz_cmd_left.angular.y = dr[11] * self.ka
-        viz_cmd_left.angular.z = dr[10] * self.ka
+        viz_cmd_left.angular.x = dr[9] * ka
+        viz_cmd_left.angular.y = dr[11] * ka
+        viz_cmd_left.angular.z = dr[10] * ka
         self.cmd_vel_left_pubs.publish(TwistStamped(
             header=Header(stamp=self.get_clock().now().to_msg(),
                    frame_id="fixed_left_gripper_bf"), twist=viz_cmd_left))
         
-
-
-
-
         # Gauche
         cmd_left = Twist()
         cmd_left.linear.x = dr[6]
         cmd_left.linear.y = -dr[8]
         cmd_left.linear.z = dr[7]
-        cmd_left.angular.x = dr[9] * self.ka
-        cmd_left.angular.y = -dr[11] * self.ka
-        cmd_left.angular.z = dr[10] * self.ka
+        cmd_left.angular.x = dr[9] * ka
+        cmd_left.angular.y = -dr[11] * ka
+        cmd_left.angular.z = dr[10] * ka
 
         self.cmd_vel_left_pub.publish(cmd_left)
 
@@ -223,7 +237,7 @@ class Broyden_controller_s_Ainit(Node):
 
         self.get_logger().info(f"updating A")
 
-        self.A = broyden_update(self.A,ds,dr)
+        self.A = broyden_update(self.A,ds,dr,self.gamma)
 
 
         A_msg = Float64MultiArray()
@@ -231,6 +245,8 @@ class Broyden_controller_s_Ainit(Node):
         self.get_logger().info(f"Publishing A matrix with {len(A_list)} elements. A0 = {A_list[0]}")
         A_msg.data = A_list
         self.A_pub.publish(A_msg)
+
+
 
         Jp = np.linalg.pinv(self.A)
 
