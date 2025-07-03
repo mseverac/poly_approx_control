@@ -96,7 +96,7 @@ class Broyden_controller_s_Ainit(Node):
             TwistStamped, "/right/cart_vel_cmd_6dof_stamped", 1
         )
 
-        self.A_pub = self.create_publisher(Float64MultiArray, '/A_Broyden', 10)
+        self.A_pub = self.create_publisher(Float64MultiArray, '/jacobian', 10)
 
     
         self.create_subscription(Float32MultiArray,"/curve_target_6dof",self.curve_target_callback,1)
@@ -248,7 +248,7 @@ class Broyden_controller_s_Ainit(Node):
 
 
 
-        Jp = np.linalg.pinv(self.A)
+        """Jp = np.linalg.pinv(self.A)
 
         s = s.reshape(-1,1)
         if self.s_star is None :
@@ -259,14 +259,14 @@ class Broyden_controller_s_Ainit(Node):
         dr_cmd = Jp @ dsstar
 
 
-        """self.get_logger().info(f"s_star shape: {self.s_star.shape}")
+        self.get_logger().info(f"s_star shape: {self.s_star.shape}")
         self.get_logger().info(f"s shape: {s.shape}")
         self.get_logger().info(f"dsstar shape: {dsstar.shape}")
         self.get_logger().info(f"Jp shape: {Jp.shape}")
 
-        self.get_logger().info(f"dr_cmd shape: {dr_cmd.shape}")"""
+        self.get_logger().info(f"dr_cmd shape: {dr_cmd.shape}")
 
-        self.pub_cmd_nn(dr_cmd)
+        self.pub_cmd_nn(dr_cmd)"""
         
 
 

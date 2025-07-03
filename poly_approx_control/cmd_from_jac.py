@@ -1,35 +1,65 @@
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray,Header,Float64MultiArray
-from geometry_msgs.msg import Point, Twist,TwistStamped
-import numpy as np
-
-from visualization_msgs.msg import Marker
+from geometry_msgs.msg import Point,Pose,PoseArray,Twist,Vector3,TransformStamped,TwistStamped
 from scipy.spatial.transform import Rotation as R
+import rclpy
+from rclpy.wait_for_message import wait_for_message
+from rclpy.node import Node
+import numpy as np
+from std_msgs.msg import Float64, Float64MultiArray,MultiArrayDimension,Float32MultiArray,Header
+import time
+
+def trans_to_matrix(trans: TransformStamped):
+  
+    pos = trans.transform.translation
+    ori = trans.transform.rotation
+
+    r_curr = R.from_quat([ori.x, ori.y, ori.z, ori.w])
+
+    return r_curr.as_matrix(),np.array([pos.x, pos.y, pos.z])
+
+def trans_to_vecs(trans: TransformStamped):
+  
+    pos = trans.transform.translation
+    ori = trans.transform.rotation
+
+    r_curr = R.from_quat([ori.x, ori.y, ori.z, ori.w])
+
+    return r_curr.as_rotvec(),np.array([pos.x, pos.y, pos.z])
+
+def compute_r(tr :TransformStamped,tl :TransformStamped):
+    """Compute the r vector from the transforms of the left and right end effectors"""
+    r_left, pos_left = trans_to_vecs(tl)
+    r_right, pos_right = trans_to_vecs(tr)
+
+    r = np.array([pos_right[0],pos_right[1],pos_right[2],
+                  r_right[0],r_right[1],r_right[2],
+                  pos_left[0],pos_left[1],pos_left[2],
+                  r_left[0],r_left[1],r_left[2]], dtype=np.float64)
+    
+    return r
 
 
-
-class Ros2ControllerNode(Node):
+class CmdFromJac(Node):
     def __init__(self):
-        super().__init__('ros2_controller_node')
+        super().__init__('cmd_from_jac_node')
 
-        self.get_logger().info("Initializing node...")
+        """jacobian_topic = "/A_init"  #for broyden update wo priori knowledge and poly approx
+        jacobian_topic = "/A_broden"  #for broyden update w priori knowledge"""
 
-
-        #gains pour dlo_nn
-        self.k = 1
-        self.ka = 0.01
-        self.vmax = 0.05
-
-        self.max_time_diff = 0.1  # seconds
-        # Subscribers
-        self.create_subscription(Float64MultiArray, '/A_init', self.jacobian_callback, 10)
-        self.create_subscription(Float32MultiArray, '/curve_target_6dof', self.curve_target_callback, 10)
-        self.create_subscription(Float32MultiArray, "/cosserat_shape", self.points3d_callback, 10)
-
+        jacobian_topic = "/jacobian"
         
-        
-        # Publishers
+
+
+        self.curve_target_data = None
+
+        self.ka_far = 0.1
+        self.ka_near = 1
+        self.k = 10
+        self.vmax = 0.02
+
+        self.s_star = None
+        self.A = None
+
+
         self.cmd_vel_left_pub = self.create_publisher(
             Twist, "/left/vis_vel_cmd_6dof", 1
         )
@@ -44,132 +74,28 @@ class Ros2ControllerNode(Node):
             TwistStamped, "/right/cart_vel_cmd_6dof_stamped", 1
         )
 
-        # Data storage
-        self.jacobian_data = None
-        self.curve_target_data = None
-        self.points3d_data = None
+        self.A_pub = self.create_publisher(Float64MultiArray, '/A_Broyden', 10)
 
-        #self.publisher_points_rviz_target = self.create_publisher(Marker, "target_marker", 1)
-        self.publisher_points_rviz = self.create_publisher(Marker, "curve_marker", 1)
-        self.publisher_points_rviz_target = self.create_publisher(Marker, "target_marker", 1)
-
-        self.last_points3d_time = self.get_clock().now()
-        self.timer = self.create_timer(0.1, self.check_timeout)
-
-        self.get_logger().info("Node initialized 2")
-
-
-    def publish_marker_points_rviz(self, points3d, pub, color=(0.0, 0.0, 1.0), id=0):
-        marker = Marker()
-        marker.header.frame_id = "cam_bassa_base_frame"
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.ns = "points"
-        marker.id = id
-        marker.type = Marker.POINTS
-        marker.action = Marker.ADD
-
-        # Set marker properties
-        marker.scale.x = 0.01
-        marker.scale.y = 0.01
-        marker.color.a = 1.0
-        marker.color.r = color[0]
-        marker.color.g = color[1]
-        marker.color.b = color[2]
-        marker.points = [Point(x=float(p[0]), y=float(p[1]), z=float(p[2])) for p in points3d]
-
-        pub.publish(marker)
+    
+        self.create_subscription(Float32MultiArray,"/curve_target_6dof",self.curve_target_callback,1)
+        self.create_subscription(Float32MultiArray,"/points3d",self.cmd_cb,1)
 
         
-    def check_timeout(self):
-        current_time = self.get_clock().now()
-        time_diff = (current_time - self.last_points3d_time).nanoseconds / 1e9
-
-        if time_diff > self.max_time_diff:
-            self.get_logger().error(f"No Points3D data received in the last {time_diff} second. Publishing zero commands.")
-            self.get_logger().info(f"now: {current_time}, last: {self.last_points3d_time}, diff: {time_diff}")
+        self.create_subscription(Float64MultiArray,jacobian_topic,self.A_cb,1)
 
 
-            # Publish zero commands
-            zero_cmd = Twist()
-            self.cmd_vel_left_pub.publish(zero_cmd)
-            self.cmd_vel_right_pub.publish(zero_cmd)
+    def A_cb(self,msg):
+        self.A = np.array(msg.data).reshape(153,12)
+        A = self.A
 
-    def points3d_callback(self, msg):
+        self.get_logger().info(f"First row of A: {A[0]}")
+        self.get_logger().info(f"Second row of A: {A[1]}")
+        self.get_logger().info(f"Third row of A: {A[2]}")
+        self.get_logger().info(f"-3 row of A: {A[-3]}")
+        self.get_logger().info(f"-2 row of A: {A[-2]}")
+        self.get_logger().info(f"-1 row of A: {A[-1]}")
 
-
-        
-        self.points3d_data = np.array(msg.data).reshape(-1, 1)
-        #self.get_logger().info(f"Points3D data shape : {self.points3d_data.shape}")
-
-        self.last_points3d_time = self.get_clock().now()
-        #self.get_logger().info(f"last_points3d_time: {self.last_points3d_time}")
-
-
-        if self.jacobian_data is None:
-            self.get_logger().warn("Jacobian data not received yet.")
-
-        else : 
-
-            if self.curve_target_data is None:
-                self.get_logger().warn("Curve target data not received yet.")
-            else:
-                # Command computation
-                self.publish_marker_points_rviz(self.curve_target_data.reshape(-1, 3), self.publisher_points_rviz_target,color=(0.0, 1.0, 0.0))
-                self.publish_marker_points_rviz(self.points3d_data.reshape(-1, 3), self.publisher_points_rviz, color=(1.0, 0.0, 0.0))
-                s = self.points3d_data.copy()
-                sstar = self.curve_target_data
-                ds = sstar - s
-
-                """self.get_logger().info(f"s: {s}")
-                self.get_logger().info(f"sstar: {sstar}")"""
-                self.get_logger().info(f"ds norm: {np.linalg.norm(ds)}")
-
-                invJ = np.linalg.pinv(self.jacobian_data)
-                #self.get_logger().info(f"invJ shape: {invJ.shape}")
-
-                dr = invJ @ ds
-                #self.get_logger().info(f"dr shape: {dr.shape}")
-                #self.get_logger().info(f"dr: {dr}")
-
-                # Publish the command velocities
-
-                self.pub_cmd_nn(dr)
-
-
-            """dr = -self.k * dr.astype(float).flatten()
-
-
-            header = Header()
-            header.stamp = self.get_clock().now().to_msg()
-            header.frame_id = "ur_left_gripper"
-
-            cmd_left = Twist()
-            cmd_left.linear.x = -dr[0]
-            cmd_left.linear.y = dr[8]
-            cmd_left.linear.z = dr[4]
-            cmd_left.angular.x = -dr[1]*self.ka
-            cmd_left.angular.y = dr[9]*self.ka
-            cmd_left.angular.z = dr[5]*self.ka
-            self.get_logger().info(f"Left command: {cmd_left}")
-            self.cmd_vel_left_pub.publish(cmd_left)
-            self.cmd_vel_left_pubs.publish(TwistStamped(header=header, twist=cmd_left))
-
-            cmd_right = Twist()
-            cmd_right.linear.x = -dr[2]
-            cmd_right.linear.y = dr[10]
-            cmd_right.linear.z = dr[6]
-            cmd_right.angular.x = - dr[3]*self.ka
-            cmd_right.angular.y = dr[11]*self.ka
-            cmd_right.angular.z = dr[7]*self.ka
-            self.get_logger().info(f"Right command: {cmd_right}")
-            self.cmd_vel_right_pub.publish(cmd_right)
-
-            header.frame_id = "ur_right_gripper"
-
-
-            self.cmd_vel_right_pubs.publish(TwistStamped(header=header, twist=cmd_right))
-"""
-    def pub_cmd_nn(self,dr):
+    def pub_cmd(self,dr):
         """Publishes the command velocities to the robot for the nn dr"""
 
         self.get_logger().info(f"------ Command velocities ---")
@@ -183,6 +109,16 @@ class Ros2ControllerNode(Node):
         self.get_logger().info(f"norm left angular dr : {np.linalg.norm(dr[9:12])}")
 
         self.get_logger().info(f"***************")
+
+
+        self.get_logger().info(f"k : {self.k}")
+
+        if np.linalg.norm(dr[0:3]) < 0.01 and np.linalg.norm(dr[6:9]) < 0.01 : 
+            ka = self.ka_near
+            self.get_logger().info(f"using ka near (ka = {ka})")
+        else:
+            ka = self.ka_far
+            self.get_logger().info(f"using ka far (ka = {ka})")
 
         dr = self.vmax * np.tanh(self.k * dr.astype(float).flatten())
 
@@ -199,25 +135,23 @@ class Ros2ControllerNode(Node):
 
             return r_pos, l_pos, vr, vl
 
-
-
         # Changement de base: x=0, y=2, z=1
         # Droite
         cmd_right = Twist()
         cmd_right.linear.x = dr[0]
         cmd_right.linear.y = -dr[2]
         cmd_right.linear.z = dr[1]
-        cmd_right.angular.x = dr[3] * self.ka
-        cmd_right.angular.y = -dr[5] * self.ka
-        cmd_right.angular.z = dr[4] * self.ka
+        cmd_right.angular.x = dr[3] * ka
+        cmd_right.angular.y = -dr[5] * ka
+        cmd_right.angular.z = dr[4] * ka
 
         viz_cmd_right = Twist()
         viz_cmd_right.linear.x = dr[0]
         viz_cmd_right.linear.y = dr[2]
         viz_cmd_right.linear.z = dr[1]
-        viz_cmd_right.angular.x = dr[3] * self.ka
-        viz_cmd_right.angular.y = dr[5] * self.ka
-        viz_cmd_right.angular.z = dr[4] * self.ka
+        viz_cmd_right.angular.x = dr[3] * ka
+        viz_cmd_right.angular.y = dr[5] * ka
+        viz_cmd_right.angular.z = dr[4] * ka
         self.cmd_vel_right_pubs.publish(TwistStamped(
             header=Header(stamp=self.get_clock().now().to_msg(),
                    frame_id="fixed_right_gripper_bf"), twist=viz_cmd_right))
@@ -226,32 +160,25 @@ class Ros2ControllerNode(Node):
         viz_cmd_left.linear.x = dr[6]
         viz_cmd_left.linear.y = dr[8]
         viz_cmd_left.linear.z = dr[7]
-        viz_cmd_left.angular.x = dr[9] * self.ka
-        viz_cmd_left.angular.y = dr[11] * self.ka
-        viz_cmd_left.angular.z = dr[10] * self.ka
+        viz_cmd_left.angular.x = dr[9] * ka
+        viz_cmd_left.angular.y = dr[11] * ka
+        viz_cmd_left.angular.z = dr[10] * ka
         self.cmd_vel_left_pubs.publish(TwistStamped(
             header=Header(stamp=self.get_clock().now().to_msg(),
                    frame_id="fixed_left_gripper_bf"), twist=viz_cmd_left))
         
-
-
-
-
         # Gauche
         cmd_left = Twist()
         cmd_left.linear.x = dr[6]
         cmd_left.linear.y = -dr[8]
         cmd_left.linear.z = dr[7]
-        cmd_left.angular.x = dr[9] * self.ka
-        cmd_left.angular.y = -dr[11] * self.ka
-        cmd_left.angular.z = dr[10] * self.ka
+        cmd_left.angular.x = dr[9] * ka
+        cmd_left.angular.y = -dr[11] * ka
+        cmd_left.angular.z = dr[10] * ka
 
-        #self.get_logger().info(f"Left command: {cmd_left}")
         self.cmd_vel_left_pub.publish(cmd_left)
-        #self.cmd_vel_left_pubs.publish(TwistStamped(header=Header(stamp=self.get_clock().now().to_msg(), frame_id="fixed_left_gripper"), twist=cmd_left))
-        #self.get_logger().info(f"Right command: {cmd_right}")
+
         self.cmd_vel_right_pub.publish(cmd_right)
-        #self.cmd_vel_right_pubs.publish(TwistStamped(header=Header(stamp=self.get_clock().now().to_msg(), frame_id="fixed_right_gripper"), twist=cmd_right))
         
         self.get_logger().info(f"norm left linear cmd : {np.linalg.norm([cmd_left.linear.x, cmd_left.linear.y, cmd_left.linear.z])}")
         self.get_logger().info(f"norm right linear cmd : {np.linalg.norm([cmd_right.linear.x, cmd_right.linear.y, cmd_right.linear.z])}")
@@ -259,27 +186,72 @@ class Ros2ControllerNode(Node):
         self.get_logger().info(f"norm right angular cmd : {np.linalg.norm([cmd_right.angular.x, cmd_right.angular.y, cmd_right.angular.z])}")
         self.get_logger().info(f"***************")
 
-
-       
-
-    def jacobian_callback(self, msg):
-        self.jacobian_data = np.array(msg.data).reshape(-1, 12)
-        #self.get_logger().info(f"Received Jacobian data: {self.jacobian_data}")
-
     def curve_target_callback(self, msg):
-        #self.get_logger().info(f"Received Curve Target message: {msg}")
-        self.curve_target_data = np.array(msg.data).reshape(-1, 1)
+        self.s_star = np.array(msg.data).reshape(-1, 1)
 
-        self.get_logger().info(f"Processed Curve Target data (shape {self.curve_target_data.shape})")
-   
+        self.get_logger().info(f"Received target shape")
+
+    def cmd_cb(self,msg : Float32MultiArray):
+
+        if self.A is None :
+            self.get_logger().info("Waiting for A")
+            return
+        
+        s = np.array(msg.data)        
+        Jp = np.linalg.pinv(self.A)
+
+        s = s.reshape(-1,1)
+        if self.s_star is None :
+            self.get_logger().info(f"Waiting for target shape to pub cmd")
+            return
+
+        dsstar = self.s_star - s
+        dr_cmd = Jp @ dsstar
+
+        self.pub_cmd(dr_cmd)
+        
+
 
 def main(args=None):
     rclpy.init(args=args)
-    node = Ros2ControllerNode()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
 
+    point_controller = CmdFromJac()
+
+    rclpy.spin(point_controller)
+
+    point_controller.destroy_node()
+    rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
+
+
+
+
+
+
+
+
+
+
+
+        
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+    
+
+
+

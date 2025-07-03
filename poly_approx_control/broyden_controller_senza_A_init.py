@@ -74,14 +74,16 @@ class Broyden_controller_s_Ainit(Node):
 
         self.curve_target_data = None
 
-        self.ka = 0.1
-        self.k = 0.0001
+        self.ka_far = 0.1
+        self.ka_near = 1
+        self.k = 10
         self.vmax = 0.02
+
 
         self.s_star = None
 
         self.A = None
-        self.gamma = 0.01
+        self.gamma = 0.1
 
         self.cmd_vel_left_pub = self.create_publisher(
             Twist, "/left/vis_vel_cmd_6dof", 1
@@ -97,7 +99,7 @@ class Broyden_controller_s_Ainit(Node):
             TwistStamped, "/right/cart_vel_cmd_6dof_stamped", 1
         )
 
-        self.A_pub = self.create_publisher(Float64MultiArray, '/A_init', 10)
+        self.A_pub = self.create_publisher(Float64MultiArray, '/jacobian', 10)
 
     
         self.create_subscription(Float32MultiArray,"/curve_target_6dof",self.curve_target_callback,1)
@@ -122,6 +124,13 @@ class Broyden_controller_s_Ainit(Node):
 
         self.get_logger().info(f"k : {self.k}")
 
+        if np.linalg.norm(dr[0:3]) < 0.01 and np.linalg.norm(dr[6:9]) < 0.01 : 
+            ka = self.ka_near
+            self.get_logger().info(f"using ka near (ka = {ka})")
+        else:
+            ka = self.ka_far
+            self.get_logger().info(f"using ka far (ka = {ka})")
+
         dr = self.vmax * np.tanh(self.k * dr.astype(float).flatten())
 
         self.get_logger().info(f"dr after saturation: {dr}")
@@ -143,17 +152,17 @@ class Broyden_controller_s_Ainit(Node):
         cmd_right.linear.x = dr[0]
         cmd_right.linear.y = -dr[2]
         cmd_right.linear.z = dr[1]
-        cmd_right.angular.x = dr[3] * self.ka
-        cmd_right.angular.y = -dr[5] * self.ka
-        cmd_right.angular.z = dr[4] * self.ka
+        cmd_right.angular.x = dr[3] * ka
+        cmd_right.angular.y = -dr[5] * ka
+        cmd_right.angular.z = dr[4] * ka
 
         viz_cmd_right = Twist()
         viz_cmd_right.linear.x = dr[0]
         viz_cmd_right.linear.y = dr[2]
         viz_cmd_right.linear.z = dr[1]
-        viz_cmd_right.angular.x = dr[3] * self.ka
-        viz_cmd_right.angular.y = dr[5] * self.ka
-        viz_cmd_right.angular.z = dr[4] * self.ka
+        viz_cmd_right.angular.x = dr[3] * ka
+        viz_cmd_right.angular.y = dr[5] * ka
+        viz_cmd_right.angular.z = dr[4] * ka
         self.cmd_vel_right_pubs.publish(TwistStamped(
             header=Header(stamp=self.get_clock().now().to_msg(),
                    frame_id="fixed_right_gripper_bf"), twist=viz_cmd_right))
@@ -162,25 +171,21 @@ class Broyden_controller_s_Ainit(Node):
         viz_cmd_left.linear.x = dr[6]
         viz_cmd_left.linear.y = dr[8]
         viz_cmd_left.linear.z = dr[7]
-        viz_cmd_left.angular.x = dr[9] * self.ka
-        viz_cmd_left.angular.y = dr[11] * self.ka
-        viz_cmd_left.angular.z = dr[10] * self.ka
+        viz_cmd_left.angular.x = dr[9] * ka
+        viz_cmd_left.angular.y = dr[11] * ka
+        viz_cmd_left.angular.z = dr[10] * ka
         self.cmd_vel_left_pubs.publish(TwistStamped(
             header=Header(stamp=self.get_clock().now().to_msg(),
                    frame_id="fixed_left_gripper_bf"), twist=viz_cmd_left))
         
-
-
-
-
         # Gauche
         cmd_left = Twist()
         cmd_left.linear.x = dr[6]
         cmd_left.linear.y = -dr[8]
         cmd_left.linear.z = dr[7]
-        cmd_left.angular.x = dr[9] * self.ka
-        cmd_left.angular.y = -dr[11] * self.ka
-        cmd_left.angular.z = dr[10] * self.ka
+        cmd_left.angular.x = dr[9] * ka
+        cmd_left.angular.y = -dr[11] * ka
+        cmd_left.angular.z = dr[10] * ka
 
         self.cmd_vel_left_pub.publish(cmd_left)
 
@@ -191,7 +196,6 @@ class Broyden_controller_s_Ainit(Node):
         self.get_logger().info(f"norm left angular cmd : {np.linalg.norm([cmd_left.angular.x, cmd_left.angular.y, cmd_left.angular.z])}")
         self.get_logger().info(f"norm right angular cmd : {np.linalg.norm([cmd_right.angular.x, cmd_right.angular.y, cmd_right.angular.z])}")
         self.get_logger().info(f"***************")
-
 
 
     def curve_target_callback(self, msg):
@@ -232,7 +236,7 @@ class Broyden_controller_s_Ainit(Node):
         A_msg.data = A_list
         self.A_pub.publish(A_msg)
 
-        Jp = np.linalg.pinv(self.A)
+        """Jp = np.linalg.pinv(self.A)
 
         s = s.reshape(-1,1)
         if self.s_star is None :
@@ -242,15 +246,7 @@ class Broyden_controller_s_Ainit(Node):
         dsstar = self.s_star - s
         dr_cmd = Jp @ dsstar
 
-
-        """self.get_logger().info(f"s_star shape: {self.s_star.shape}")
-        self.get_logger().info(f"s shape: {s.shape}")
-        self.get_logger().info(f"dsstar shape: {dsstar.shape}")
-        self.get_logger().info(f"Jp shape: {Jp.shape}")
-
-        self.get_logger().info(f"dr_cmd shape: {dr_cmd.shape}")"""
-
-        self.pub_cmd_nn(dr_cmd)
+        self.pub_cmd_nn(dr_cmd)"""
         
 
 

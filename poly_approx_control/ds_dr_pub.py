@@ -83,6 +83,7 @@ class DsDrPub(Node):
 
         self.last_s_pub_viz = self.create_publisher(Marker, 'last_s_marker', 10)
         self.s_pub_viz = self.create_publisher(Marker, 's_marker', 10)
+        self.sm10_pub_viz = self.create_publisher(Marker, 's_m10_ds_marker', 10)
 
         
         self.create_timer(0.2,self.timer_cb)
@@ -162,11 +163,21 @@ class DsDrPub(Node):
 
         max_norm = np.max(norms_ds)
 
+        r_pos, l_pos, vr, vl = decompose_r(dr)
+
+        drs = (r_pos, l_pos, vr, vl)
+
+        
+
 
 
         def viz_ds_dr(s,last_s,dr):
 
-            self.publish_marker_points_rviz(last_s.reshape(-1,3),self.last_s_pub_viz,color=(0.3,0.3,0.3))
+            ds = s - last_s
+            sm10 = s - 10 * ds 
+
+            self.publish_marker_points_rviz(sm10.reshape(-1,3),self.sm10_pub_viz,color=(0.2,0.2,0.2))
+            self.publish_marker_points_rviz(last_s.reshape(-1,3),self.last_s_pub_viz,color=(0.5,0.5,0.5))
             self.publish_marker_points_rviz(s.reshape(-1,3),self.s_pub_viz,color=(0.7,0.7,0.7))
 
             
@@ -196,11 +207,15 @@ class DsDrPub(Node):
             dr_l_msg.twist.angular.z = vl[2]
             self.dr_l_pub.publish(dr_l_msg)
 
-        if max_norm > self.seuil :
+        if max_norm > self.seuil and max(np.linalg.norm(r_pos),np.linalg.norm(l_pos)) > self.seuil :
 
-            
-            self.get_logger().info(f"ds: {ds.reshape(-1,3)}")
-            self.get_logger().info(f"norms_ds: {norms_ds}")
+            self.get_logger().info(f"Norm r_pos: {np.linalg.norm(r_pos):.6f}")
+            self.get_logger().info(f"Norm l_pos: {np.linalg.norm(l_pos):.6f}")
+            self.get_logger().info(f"Norm vr: {np.linalg.norm(vr):.6f}")
+            self.get_logger().info(f"Norm vl: {np.linalg.norm(vl):.6f}")
+
+
+            #self.get_logger().info(f"ds: {ds.reshape(-1,3)}")
             self.get_logger().info(f"max_norm: {max_norm}")
             self.get_logger().info(f"dr : {dr.reshape(-1,1)}")
             viz_ds_dr(self.s,self.last_s,dr)
@@ -223,6 +238,7 @@ class DsDrPub(Node):
             ls_msg = Float32MultiArray()
             ls_msg.data = self.last_s.tolist()
             self.last_s_pub.publish(ls_msg)
+
 
             dr_msg = Float32MultiArray()
             dr_msg.data = dr.tolist()
